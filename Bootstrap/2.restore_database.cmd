@@ -1,0 +1,2 @@
+sqlcmd -S "(local)\SQL2017" -d "master" -E -I -Q "exec master.dbo.restore_database @database_name = N'FMCSW_tSQLt', @file_path = N'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Backup\FMCSW_tSQLt.bak', @debug = 1"
+pause
