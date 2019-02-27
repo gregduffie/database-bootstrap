@@ -49,16 +49,23 @@ select
      @crlf = char(13) + char(10)
     ,@batch_marker = '%' + @crlf + '[Gg][Oo]' + @crlf + '%'
 
-set @len = len(@file_content)
-
--- If the file doesn't have a GO at all then add one to the end
-if patindex(@batch_marker, @file_content) = 0
+-- If the file is null or just GO, set it to nothing.
+if isnull(@file_content, N'') = N'' or @file_content = N'GO' or @file_content = @crlf + N'GO' + @crlf or @file_content = @crlf + N'GO' or @file_content = N'GO' + @crlf
+begin
+    set @file_content = N''
+end
+else if patindex(@batch_marker, @file_content) = 0 -- If the file doesn't have a GO at all then add one to the end
 begin
     if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [parse_file] Adding a batch marker to the end'
-
     set @file_content += (@crlf + 'go' + @crlf)
-    set @len = len(@file_content)
 end
+else if patindex('%' + @crlf + '[Gg][Oo]', @file_content) > 0 -- The file ends with GO but does not have a trailing <CR><LF>
+begin
+    if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [parse_file] Adding a <CR><LF> to the end'
+    set @file_content += (@crlf)
+end
+
+set @len = len(@file_content)
 
 set @pos = 1
 while @pos < @len
@@ -119,8 +126,74 @@ exec master.dbo.clean_file
 exec master.dbo.parse_file
      @file_content = @file_content
     ,@debug = @debug
+GO
 
+-- Test GO at EOF.
+declare @file_content nvarchar(max), @CRLF nchar(2) = char(13) + char(10)
+
+-- No GO at all.
+set @file_content = N'test no ender'
+exec master.dbo.parse_file
+     @file_content = @file_content
+    ,@debug = 1
+
+-- No GO at the end.
+set @file_content = N'test no ender' + @CRLF + N'GO' + @CRLF + N'more stuff'
+exec master.dbo.parse_file
+     @file_content = @file_content
+    ,@debug = 1
+
+-- GO at the end followed by nothing
+set @file_content = N'test no ender' + @CRLF + N'GO'
+exec master.dbo.parse_file
+     @file_content = @file_content
+    ,@debug = 1
+
+-- GO at the end followed by <CR><LF>
+set @file_content = N'start with something go in the midst of it' + @CRLF + N'GO' + @CRLF
+exec master.dbo.parse_file
+     @file_content = @file_content
+    ,@debug = 1
+
+-- GO in middle and at the end followed by <CR><LF>
+set @file_content = N'happy path test go right here' + @CRLF + N'GO' + @CRLF + N'more text at the end go in the middle' + @CRLF + N'GO' + @CRLF
+exec master.dbo.parse_file
+     @file_content = @file_content
+    ,@debug = 1
+
+-- GO in middle and at the end followed by <CR><LF>
+set @file_content = N'happy path test go right here' + @CRLF + N'GO' + @CRLF + N' some text in between ' + @CRLF + N'GO' + @CRLF + N'more text at the end go in the middle' + @CRLF + N'GO' + @CRLF
+exec master.dbo.parse_file
+     @file_content = @file_content
+    ,@debug = 1
+
+-- <CR><LF> GO <CR><LF>
+set @file_content = @CRLF + N'GO' + @CRLF
+exec master.dbo.parse_file
+     @file_content = @file_content
+    ,@debug = 1
+
+-- GO <CR><LF>
+set @file_content = N'GO' + @CRLF
+exec master.dbo.parse_file
+     @file_content = @file_content
+    ,@debug = 1
+
+-- <CR><LF> GO
+set @file_content = @CRLF + N'GO'
+exec master.dbo.parse_file
+     @file_content = @file_content
+    ,@debug = 1
+
+-- Just GO
+set @file_content = N'GO'
+exec master.dbo.parse_file
+     @file_content = @file_content
+    ,@debug = 1
+
+-- NULL file content
+set @file_content = null
+exec master.dbo.parse_file
+     @file_content = @file_content
+    ,@debug = 1
 */
-
-
-

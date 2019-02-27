@@ -1,0 +1,2 @@
+sqlcmd -S "(local)\SQL2017" -d "master" -E -I -Q "exec master.dbo.install_tsqlt_tests @database_name = N'FMCSW_tSQLt', @folder_path = N'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database', @debug = 1"
+pause

@@ -182,6 +182,11 @@ delete @files where [file_path] like '%database\Static Data\dbo.ZipCodeLookup%'
 delete @files where [file_path] like '%database\Tables\JSONHierarchy%'
 delete @files where [file_path] like '%database\Functions\dbo.udf_ToJSON%'
 
+-- Remove these views (for now) because they can't be "altered" since they rely on each other. Maybe views should be dropped and recreated instead of altered. Why does it work on SQL 2017 but not on 2012?
+delete @files where [file_path] like '%database\Views\dbo.vwScheduleStartTime%'
+delete @files where [file_path] like '%database\Views\dbo.vwScheduleEndTime%'
+delete @files where [file_path] like '%database\Views\dbo.vwSchedule%'
+
 -- What do we have left?
 select @rowcount = count(*) from @files
 
@@ -336,7 +341,7 @@ begin
 
         select
              @sql_params = N'@sql_statement nvarchar(max)'
-            ,@sql = N'exec <<@database_name>>.sys.sp_executesql @sql_statement'
+            ,@sql = N'set quoted_identifier on; exec [<<@database_name>>].sys.sp_executesql @sql_statement;'
             ,@sql = replace(@sql, '<<@database_name>>', @database_name)
 
         set @ident = 1

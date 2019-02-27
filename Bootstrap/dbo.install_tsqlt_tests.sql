@@ -38,6 +38,7 @@ declare
     ,@rowcount int
 
 declare @output table (test_class nvarchar(max) null)
+create table #loadoutput (ident int not null identity(1, 1) primary key clustered, ret_code int, test_class nvarchar(1000), command_output nvarchar(max))
 
 --====================================================================================================
 
@@ -97,6 +98,8 @@ insert @output (test_class)
 
 delete @output where test_class is null or test_class like 'File Not Found%' -- Happens when you don't have any procedures in a folder
 
+delete @output where test_class = 'tSQLt.Class.sql'
+
 select @rowcount = count(*) from @output
 
 if @debug >= 5 select '@output' as '@output', * from @output
@@ -130,7 +133,7 @@ begin
             -- TODO: Change this to use the list_files, read_file, clean_file, parse_file logic so that you can count the number of GOs and make sure that all of the test classes and individual tests got installed.
             select
                  -- If you add the -b switch (sqlcmd -b -E...) it will fail as soon as it runs into an error
-                 @xp_cmdshell = 'sqlcmd -E -S "<<@server_name>>" -d "<<@database_name>>" -I -i "<<@folder_path>>\<<@test_class>>"'
+                 @xp_cmdshell = 'sqlcmd -b -E -S "<<@server_name>>" -d "<<@database_name>>" -I -i "<<@folder_path>>\<<@test_class>>"'
                 ,@xp_cmdshell = replace(@xp_cmdshell, '<<@server_name>>', @server_name)
                 ,@xp_cmdshell = replace(@xp_cmdshell, '<<@database_name>>', @database_name)
                 ,@xp_cmdshell = replace(@xp_cmdshell, '<<@folder_path>>', @folder_path)
@@ -139,9 +142,19 @@ begin
             if @debug >= 5 print '[' + convert(varchar(23), getdate(), 121) + '] [install_tsqlt_tests] @xp_cmdshell: ' + isnull(@xp_cmdshell, '{null}')
 
             if @debug >= 255
-                exec xp_cmdshell @xp_cmdshell
+                exec @return = xp_cmdshell @xp_cmdshell
             else
-                exec xp_cmdshell @xp_cmdshell, no_output
+                exec @return = xp_cmdshell @xp_cmdshell, 'no_output'
+
+            if @return <> 0
+            begin
+                insert into #loadoutput (command_output)
+                    exec xp_cmdshell @xp_cmdshell
+                update #loadoutput
+                    set ret_code = @return
+                        ,test_class = @test_class
+                    where ret_code is null
+            end
 
             delete @output where test_class = @test_class
 
@@ -153,6 +166,9 @@ begin
 end
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [install_tsqlt_tests] END'
+
+if exists (select 1 from #loadoutput)
+    select * from #loadoutput where command_output is not null order by ident
 
 return @return
 
@@ -175,5 +191,19 @@ exec master.dbo.install_tsqlt_tests
 
 -- Run all tSQLt tests
 exec tSQLt.RunAll
+
+*/
+
+/*
+
+-- Find the schema for any procedures that have "test" in the front and are not "dbo" and use tSQLt.DropClass to remove them.
+-- Note: There's no easy way to find all of the tSQLt stored procedures because you can't assume that every non-dbo stored procedure is tSQLt. Someone could have created a stored procedure named "foo.bar".
+-- A better method would be to restore a blank copy of the database and schema because someone could have created a real procedure named "foo.test-bar".
+declare @sql nvarchar(4000) = N''
+
+select @sql = @sql + 'exec tSQLt.DropClass ''' + schema_name([schema_id]) + '''
+' from (select distinct [schema_id] from sys.procedures where is_ms_shipped = 0 and [schema_id] <> schema_id('dbo') and name like 'test%') x
+
+exec sp_executesql @sql
 
 */

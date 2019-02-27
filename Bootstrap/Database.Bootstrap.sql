@@ -39,13 +39,84 @@ go
 use master
 go
 
+if object_id('dbo.udf_split_8k_string_single_delimiter') is not null
+begin
+    drop function dbo.udf_split_8k_string_single_delimiter
+end
+go
+
+create function dbo.udf_split_8k_string_single_delimiter
+(
+     @string varchar(8000)
+    ,@delimiter char(1) = ','
+)
+--WARNING!!! DO NOT USE MAX DATA-TYPES HERE! IT WILL KILL PERFORMANCE!
+--This method produces zero reads compared to rs_fn_splitNVARCHAR
+returns table with schemabinding as
+return
+
+/*
+Taken from Jeff Moden's article:
+http://www.sqlservercentral.com/articles/Tally+Table/72993/
+*/
+
+with e1(n) as
+( -- 10E+1 or 10 rows
+    select 1 union all select 1 union all select 1 union all
+    select 1 union all select 1 union all select 1 union all
+    select 1 union all select 1 union all select 1 union all select 1
+)
+,e2(n) as
+( -- 10E+2 or 100 rows
+    select 1 from e1 a, e1 b
+)
+,e4(n) as
+( -- 10E+4 or 10,000 rows max
+    select 1 from e2 a, e2 b
+)
+,cteTally(n) as
+( -- This provides the base CTE and limits the number of rows right up front for both a performance gain and prevention of accidental overruns
+    select top (isnull(datalength(@string),0)) row_number() over (order by (select null)) from e4
+),
+cteStart(n1) as
+( -- This returns N+1 (starting position of each element just once for each delimiter)
+    select 1 union all
+    select t.n + 1 from cteTally t where substring(@string, t.n, 1) = @delimiter
+),
+cteLen(n1, l1) as
+( -- Return start and length (for use in substring)
+    select s.n1, isnull(nullif(charindex(@delimiter, @string, s.n1), 0) - s.n1, 8000)
+    from cteStart s
+)
+-- Do the actual split. The ISNULLNULLIF combo handles the length for the final element when no delimiter is found.
+select
+     ItemNumber = row_number() over(order by l.n1)
+    ,Item = substring(@string, l.n1, l.l1)
+from cteLen l;
+
+go
+
+/*
+
+declare
+     @string varchar(8000) = 'D:\temp\temp_1.sql,D:\temp\temp_2.sql,D:\temp\temp_3.sql'
+    ,@delimiter char(1) = ','
+
+select * from dbo.udf_split_8k_string_single_delimiter(@string, @delimiter)
+
+*/
+--====================================================================================================
+
+use master
+go
+
 if exists (select 1 from information_schema.routines where routine_name = 'directory_slash' and routine_schema = 'dbo')
 begin
     drop function dbo.directory_slash
 end
 go
 
-create function dbo.directory_slash 
+create function dbo.directory_slash
 (
      @beginning_slash varchar(3)
     ,@directory varchar(260)
@@ -412,7 +483,7 @@ go
 
 create procedure dbo.validate_repository
 (
-     @repository_path nvarchar(2000)    -- [Required] The full path to the repository folder (e.g., C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database).
+     @repository_path nvarchar(2000)    -- [Required] The full path to the repository folder (e.g., C:\Users\gduffie\Documents\GitHub\database-bootstrap).
     ,@branch varchar(50) = null         -- [Optional] The branch that you are expecting to be checked out (i.e., "ref: refs/heads/development").
     ,@debug tinyint = 0
 )
@@ -501,7 +572,7 @@ declare
     ,@repository_path nvarchar(2000)
     ,@branch varchar(50)
 
-set @repository_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database'
+set @repository_path = 'C:\Users\gduffie\Documents\GitHub\database-bootstrap'
 set @branch = 'development'
 
 exec @return = master.dbo.validate_repository
@@ -602,7 +673,7 @@ go
 
 create procedure dbo.list_files
 (
-     @folder_path varchar(260)      -- [Required] Path to folder (i.e., C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\)
+     @folder_path varchar(260)      -- [Required] Path to folder (i.e., C:\Users\gduffie\Documents\GitHub\database-bootstrap\)
     ,@include_subfolders bit = 0    -- [Optional] Defaults to exclude subfolders
     ,@extension varchar(10) = 'sql' -- [Required] No period or slash necessary
     ,@debug tinyint = 0
@@ -673,14 +744,14 @@ go
 /* DEV TESTING
 
 exec master.dbo.list_files
-     @folder_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\'
+     @folder_path = 'C:\Users\gduffie\Documents\GitHub\database-bootstrap\'
     ,@include_subfolders = 1
     ,@extension = 'sql'
     ,@debug = 2
 
 -- Not sure when this would ever happen...
 exec master.dbo.list_files
-     @folder_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\database\revisions\Revisions_2.x.x.sql'
+     @folder_path = 'C:\Users\gduffie\Documents\GitHub\database-bootstrap\database\revisions\Revisions_2.x.x.sql'
     ,@include_subfolders = 1
     ,@extension = 'sql'
     ,@debug = 2
@@ -699,7 +770,7 @@ go
 
 create procedure dbo.read_file
 (
-     @file_path varchar(260)                    -- [Required] Path to file (i.e., C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\database\Stored Procedures\dbo.GetUsers.sql)
+     @file_path varchar(260)                    -- [Required] Path to file (i.e., C:\Users\gduffie\Documents\GitHub\database-bootstrap\database\Stored Procedures\dbo.GetUsers.sql)
     ,@file_content nvarchar(max) = null output  -- [Optional] No need to pass anything.
     ,@debug tinyint = 0
 )
@@ -777,7 +848,7 @@ declare
     ,@debug tinyint
 
 select
-     @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\database\Revisions\Revisions_2.x.x.sql'
+     @file_path = 'C:\Users\gduffie\Documents\GitHub\database-bootstrap\database\Revisions\Revisions_2.x.x.sql'
     ,@debug = 4
 
 exec master.dbo.read_file
@@ -1049,8 +1120,8 @@ declare
     ,@file_content nvarchar(max)
     ,@debug tinyint
 
---set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\database\Post Processing\0100 Rollover SP_Log Table.sql'
-set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\database\Revisions\Revisions_2.x.x.sql'
+--set @file_path = 'C:\Users\gduffie\Documents\GitHub\database-bootstrap\database\Post Processing\0100 Rollover SP_Log Table.sql'
+set @file_path = 'C:\Users\gduffie\Documents\GitHub\database-bootstrap\database\Revisions\Revisions_2.x.x.sql'
 
 set @debug = 6
 
@@ -1122,16 +1193,23 @@ select
      @crlf = char(13) + char(10)
     ,@batch_marker = '%' + @crlf + '[Gg][Oo]' + @crlf + '%'
 
-set @len = len(@file_content)
-
--- If the file doesn't have a GO at all then add one to the end
-if patindex(@batch_marker, @file_content) = 0
+-- If the file is null or just GO, set it to nothing.
+if isnull(@file_content, N'') = N'' or @file_content = N'GO' or @file_content = @crlf + N'GO' + @crlf or @file_content = @crlf + N'GO' or @file_content = N'GO' + @crlf
+begin
+    set @file_content = N''
+end
+else if patindex(@batch_marker, @file_content) = 0 -- If the file doesn't have a GO at all then add one to the end
 begin
     if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [parse_file] Adding a batch marker to the end'
-
     set @file_content += (@crlf + 'go' + @crlf)
-    set @len = len(@file_content)
 end
+else if patindex('%' + @crlf + '[Gg][Oo]', @file_content) > 0 -- The file ends with GO but does not have a trailing <CR><LF>
+begin
+    if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [parse_file] Adding a <CR><LF> to the end'
+    set @file_content += (@crlf)
+end
+
+set @len = len(@file_content)
 
 set @pos = 1
 while @pos < @len
@@ -1165,9 +1243,9 @@ declare
     ,@file_content nvarchar(max)
     ,@debug tinyint
 
---set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\database\Revisions\Revisions_2.x.x.sql'
---set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\database\Post Processing\9999 Remove Obsolete Routines.sql'
-set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\database\Post Processing\0100 Rollover SP_Log Table.sql'
+--set @file_path = 'C:\Users\gduffie\Documents\GitHub\database-bootstrap\database\Revisions\Revisions_2.x.x.sql'
+--set @file_path = 'C:\Users\gduffie\Documents\GitHub\database-bootstrap\database\Post Processing\9999 Remove Obsolete Routines.sql'
+set @file_path = 'C:\Users\gduffie\Documents\GitHub\database-bootstrap\database\Post Processing\0100 Rollover SP_Log Table.sql'
 
 set @debug = 6
 
@@ -1192,11 +1270,223 @@ exec master.dbo.clean_file
 exec master.dbo.parse_file
      @file_content = @file_content
     ,@debug = @debug
+GO
 
+-- Test GO at EOF.
+declare @file_content nvarchar(max), @CRLF nchar(2) = char(13) + char(10)
+
+-- No GO at all.
+set @file_content = N'test no ender'
+exec master.dbo.parse_file
+     @file_content = @file_content
+    ,@debug = 1
+
+-- No GO at the end.
+set @file_content = N'test no ender' + @CRLF + N'GO' + @CRLF + N'more stuff'
+exec master.dbo.parse_file
+     @file_content = @file_content
+    ,@debug = 1
+
+-- GO at the end followed by nothing
+set @file_content = N'test no ender' + @CRLF + N'GO'
+exec master.dbo.parse_file
+     @file_content = @file_content
+    ,@debug = 1
+
+-- GO at the end followed by <CR><LF>
+set @file_content = N'start with something go in the midst of it' + @CRLF + N'GO' + @CRLF
+exec master.dbo.parse_file
+     @file_content = @file_content
+    ,@debug = 1
+
+-- GO in middle and at the end followed by <CR><LF>
+set @file_content = N'happy path test go right here' + @CRLF + N'GO' + @CRLF + N'more text at the end go in the middle' + @CRLF + N'GO' + @CRLF
+exec master.dbo.parse_file
+     @file_content = @file_content
+    ,@debug = 1
+
+-- GO in middle and at the end followed by <CR><LF>
+set @file_content = N'happy path test go right here' + @CRLF + N'GO' + @CRLF + N' some text in between ' + @CRLF + N'GO' + @CRLF + N'more text at the end go in the middle' + @CRLF + N'GO' + @CRLF
+exec master.dbo.parse_file
+     @file_content = @file_content
+    ,@debug = 1
+
+-- <CR><LF> GO <CR><LF>
+set @file_content = @CRLF + N'GO' + @CRLF
+exec master.dbo.parse_file
+     @file_content = @file_content
+    ,@debug = 1
+
+-- GO <CR><LF>
+set @file_content = N'GO' + @CRLF
+exec master.dbo.parse_file
+     @file_content = @file_content
+    ,@debug = 1
+
+-- <CR><LF> GO
+set @file_content = @CRLF + N'GO'
+exec master.dbo.parse_file
+     @file_content = @file_content
+    ,@debug = 1
+
+-- Just GO
+set @file_content = N'GO'
+exec master.dbo.parse_file
+     @file_content = @file_content
+    ,@debug = 1
+
+-- NULL file content
+set @file_content = null
+exec master.dbo.parse_file
+     @file_content = @file_content
+    ,@debug = 1
+*/
+--====================================================================================================
+
+use master
+go
+
+if object_id('dbo.get_default_database_location') is not null
+begin
+    drop procedure dbo.get_default_database_location
+end
+go
+
+create procedure dbo.get_default_database_location
+(
+     @default_data_path nvarchar(1000) = null output
+    ,@default_log_path nvarchar(1000) = null output
+    ,@debug tinyint = 0
+)
+with encryption
+as
+
+set nocount on
+set xact_abort on
+set transaction isolation level read uncommitted
+
+/* Borrowed and modified from: http://www.dbi-services.com/index.php/blog/entry/sql-server-how-to-find-default-data-path */
+
+/* Suggested @debug values
+1 = Simple print statements
+2 = Simple select statements (e.g. select @variable_1 as variable_1, @variable_2 as variable_2)
+3 = Result sets from temp tables (e.g. select '#temp_table_name' as '#temp_table_name' from #temp_table_name where ...)
+4 = @sql statements from exec() or sp_executesql
 */
 
+if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [get_default_database_location] START'
 
+declare
+     @position int
+    ,@instance_name nvarchar(128)
+    ,@registry_path nvarchar(128)
+    ,@registry_key nvarchar(max)
+    ,@database_name nvarchar(128)
+    ,@sql nvarchar(1000)
+    ,@sql_params nvarchar(200)
 
+create table #instance_registry_path
+(
+     instance_name nvarchar(128)
+    ,registry_path nvarchar(128)
+)
+
+if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [get_default_database_location] Trying SERVERPROPERTY method'
+
+-- If SQL Server 2012...
+select
+     @default_data_path = convert(nvarchar(128), serverproperty('instancedefaultdatapath'))
+    ,@default_log_path = convert(nvarchar(128), serverproperty('instancedefaultlogpath'))
+
+if @default_data_path is null
+begin
+    /* Must be SQL Server 2005 through 2008 */
+
+    if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [get_default_database_location] Trying registry method'
+
+    -- Get the instance name
+    set @position = charindex('\', @@servername)
+
+    if @position = 0
+        set @instance_name = N'MSSQLSERVER'
+    else
+        set @instance_name = substring(@@servername, @position + 1, len(@@servername))
+
+    -- Pull the default path from the registry
+    insert #instance_registry_path
+        exec master.sys.xp_instance_regenumvalues N'HKEY_LOCAL_MACHINE', N'SOFTWARE\\Microsoft\\Microsoft SQL Server\\Instance Names\\SQL'
+
+    select @registry_path = registry_path from #instance_registry_path where @instance_name = instance_name
+
+    set @registry_key = N'SOFTWARE\Microsoft\Microsoft SQL Server\' + @registry_path + N'\MSSQLServer'
+
+    exec master.sys.xp_regread N'HKEY_LOCAL_MACHINE', @registry_key, N'DefaultData', @default_data_path output
+    exec master.sys.xp_regread N'HKEY_LOCAL_MACHINE', @registry_key, N'DefaultLog', @default_log_path output
+
+    if @default_data_path is null
+    begin
+        /* Wow, either something's *really* wrong or you're using a very old version of SQL Server! */
+
+        if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [get_default_database_location] Trying any user database method'
+
+        -- Look for the most recent, non-system database and see what they are using.
+        select top 1 @database_name = name from sys.databases where database_id > 4 and name not in ('ReportServer', 'ReportServerTempDB') order by create_date desc
+
+        if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [get_default_database_location] Getting physical_name from database [' + @database_name + ']'
+
+        select
+             @sql_params = N'@default_data_path nvarchar(1000) output, @default_log_path nvarchar(1000) output'
+            ,@sql = N'select top 1 @default_data_path = physical_name from [<<@database_name>>].sys.database_files where type = 0; select top 1 @default_log_path = physical_name from [<<@database_name>>].sys.database_files where type = 1;'
+            ,@sql = replace(@sql, '<<@database_name>>', @database_name)
+
+        exec sp_executesql
+             @sql, @sql_params
+            ,@default_data_path = @default_data_path output
+            ,@default_log_path = @default_log_path output
+
+        if @default_data_path is null
+        begin
+            /* I guess we'll just use master. And if you don't have THAT then I'm out. */
+
+            if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [get_default_database_location] Trying master database method'
+
+            select
+                 @sql_params = N'@default_data_path nvarchar(1000) output, @default_log_path nvarchar(1000) output'
+                ,@sql = N'select top 1 @default_data_path = physical_name from [master].sys.database_files where type = 0; select top 1 @default_log_path = physical_name from [master].sys.database_files where type = 1;'
+
+            exec sp_executesql
+                 @sql, @sql_params
+                ,@default_data_path = @default_data_path output
+                ,@default_log_path = @default_log_path output
+        end
+
+        select
+             @default_data_path = reverse(stuff(reverse(@default_data_path), 1, charindex('\', reverse(@default_data_path)), ''))
+            ,@default_log_path = reverse(stuff(reverse(@default_log_path), 1, charindex('\', reverse(@default_log_path)), ''))
+    end
+end
+
+if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [get_default_database_location] END'
+
+return 0
+
+go
+
+/* DEV TESTING
+
+declare
+     @default_data_path nvarchar(1000)
+    ,@default_log_path nvarchar(1000)
+    ,@debug tinyint = 9
+
+exec master.dbo.get_default_database_location
+     @default_data_path = @default_data_path output
+    ,@default_log_path = @default_log_path output
+    ,@debug = @debug
+
+select @default_data_path as default_data_path, @default_log_path as default_log_path
+
+*/
 --====================================================================================================
 
 use master
@@ -1210,7 +1500,7 @@ go
 
 create procedure dbo.create_database
 (
-     @path varchar(260) -- Path to repository folder (i.e., C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\) or the whatever you want to install folder (i.e., C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\database\Bootstrap)
+     @path varchar(260) -- Path to repository folder (i.e., C:\Users\gduffie\Documents\GitHub\database-bootstrap\) or the whatever you want to install folder (i.e., C:\Users\gduffie\Documents\GitHub\database-bootstrap\database\Bootstrap)
     ,@database_name nvarchar(128)
     ,@debug tinyint = 0
 )
@@ -1437,7 +1727,7 @@ go
 create procedure dbo.install_tsqlt_tests
 (
      @database_name nvarchar(128)   -- [Required] The database where you want to install the tSQLt class
-    ,@folder_path varchar(260)      -- [Required] Path to the folder above the database folder (i.e., C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database)
+    ,@folder_path varchar(260)      -- [Required] Path to the folder above the database folder (i.e., C:\Users\gduffie\Documents\GitHub\database-bootstrap)
     ,@debug tinyint = 0
 )
 as
@@ -1463,6 +1753,7 @@ declare
     ,@rowcount int
 
 declare @output table (test_class nvarchar(max) null)
+create table #loadoutput (ident int not null identity(1, 1) primary key clustered, ret_code int, test_class nvarchar(1000), command_output nvarchar(max))
 
 --====================================================================================================
 
@@ -1522,6 +1813,8 @@ insert @output (test_class)
 
 delete @output where test_class is null or test_class like 'File Not Found%' -- Happens when you don't have any procedures in a folder
 
+delete @output where test_class = 'tSQLt.Class.sql'
+
 select @rowcount = count(*) from @output
 
 if @debug >= 5 select '@output' as '@output', * from @output
@@ -1555,7 +1848,7 @@ begin
             -- TODO: Change this to use the list_files, read_file, clean_file, parse_file logic so that you can count the number of GOs and make sure that all of the test classes and individual tests got installed.
             select
                  -- If you add the -b switch (sqlcmd -b -E...) it will fail as soon as it runs into an error
-                 @xp_cmdshell = 'sqlcmd -E -S "<<@server_name>>" -d "<<@database_name>>" -I -i "<<@folder_path>>\<<@test_class>>"'
+                 @xp_cmdshell = 'sqlcmd -b -E -S "<<@server_name>>" -d "<<@database_name>>" -I -i "<<@folder_path>>\<<@test_class>>"'
                 ,@xp_cmdshell = replace(@xp_cmdshell, '<<@server_name>>', @server_name)
                 ,@xp_cmdshell = replace(@xp_cmdshell, '<<@database_name>>', @database_name)
                 ,@xp_cmdshell = replace(@xp_cmdshell, '<<@folder_path>>', @folder_path)
@@ -1564,9 +1857,19 @@ begin
             if @debug >= 5 print '[' + convert(varchar(23), getdate(), 121) + '] [install_tsqlt_tests] @xp_cmdshell: ' + isnull(@xp_cmdshell, '{null}')
 
             if @debug >= 255
-                exec xp_cmdshell @xp_cmdshell
+                exec @return = xp_cmdshell @xp_cmdshell
             else
-                exec xp_cmdshell @xp_cmdshell, no_output
+                exec @return = xp_cmdshell @xp_cmdshell, 'no_output'
+
+            if @return <> 0
+            begin
+                insert into #loadoutput (command_output)
+                    exec xp_cmdshell @xp_cmdshell
+                update #loadoutput
+                    set ret_code = @return
+                        ,test_class = @test_class
+                    where ret_code is null
+            end
 
             delete @output where test_class = @test_class
 
@@ -1579,6 +1882,9 @@ end
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [install_tsqlt_tests] END'
 
+if exists (select 1 from #loadoutput)
+    select * from #loadoutput where command_output is not null order by ident
+
 return @return
 
 go
@@ -1590,16 +1896,30 @@ go
 
 exec master.dbo.upgrade_database
      @database_name = 'ScheduleWise'
-    ,@folder_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database'
+    ,@folder_path = 'C:\Users\gduffie\Documents\GitHub\database-bootstrap'
     ,@debug = 1
 
 exec master.dbo.install_tsqlt_tests
      @database_name = 'ScheduleWise'
-    ,@folder_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database'
+    ,@folder_path = 'C:\Users\gduffie\Documents\GitHub\database-bootstrap'
     ,@debug = 1
 
 -- Run all tSQLt tests
 exec tSQLt.RunAll
+
+*/
+
+/*
+
+-- Find the schema for any procedures that have "test" in the front and are not "dbo" and use tSQLt.DropClass to remove them.
+-- Note: There's no easy way to find all of the tSQLt stored procedures because you can't assume that every non-dbo stored procedure is tSQLt. Someone could have created a stored procedure named "foo.bar".
+-- A better method would be to restore a blank copy of the database and schema because someone could have created a real procedure named "foo.test-bar".
+declare @sql nvarchar(4000) = N''
+
+select @sql = @sql + 'exec tSQLt.DropClass ''' + schema_name([schema_id]) + '''
+' from (select distinct [schema_id] from sys.procedures where is_ms_shipped = 0 and [schema_id] <> schema_id('dbo') and name like 'test%') x
+
+exec sp_executesql @sql
 
 */
 --====================================================================================================
@@ -1615,8 +1935,8 @@ go
 
 create procedure dbo.upgrade_database
 (
-     @database_name nvarchar(128)   -- [Required] ScheduleWise, FMCSW_DEV, FMCSW_QA, FMCSW_STG, FMCSW
-    ,@folder_path varchar(260)      -- [Required] Path to the folder above the database folder (i.e., C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database)
+     @database_name nvarchar(128)   -- [Required] ScheduleWise, DEV, QA, STG, FMCSW
+    ,@folder_path varchar(260)      -- [Required] Path to the folder above the database folder (i.e., C:\Users\gduffie\Documents\GitHub\database-bootstrap)
     ,@is_repository bit = 0         -- [Required] If "yes" then we will verify that it's a valid GitHub repository.
     ,@branch varchar(50) = null     -- [Required/Optional] If @is_repository = 1 then @branch is required. Otherwise @branch is optional.
     ,@debug tinyint = 0
@@ -1786,6 +2106,11 @@ delete @files where [file_path] like '%database\Static Data\dbo.ZipCodeLookup%'
 delete @files where [file_path] like '%database\Tables\JSONHierarchy%'
 delete @files where [file_path] like '%database\Functions\dbo.udf_ToJSON%'
 
+-- Remove these views (for now) because they can't be "altered" since they rely on each other. Maybe views should be dropped and recreated instead of altered. Why does it work on SQL 2017 but not on 2012?
+delete @files where [file_path] like '%database\Views\dbo.vwScheduleStartTime%'
+delete @files where [file_path] like '%database\Views\dbo.vwScheduleEndTime%'
+delete @files where [file_path] like '%database\Views\dbo.vwSchedule%'
+
 -- What do we have left?
 select @rowcount = count(*) from @files
 
@@ -1807,7 +2132,7 @@ begin
 
     --set xact_abort on
     -- TODO: Change this to use the repo path + '\Tables\TableOrder.csv'
-    --bulk insert #TableOrder from 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\database\Tables\TableOrder.csv' with (datafiletype = 'char', firstrow = 2, tablock, format = 'csv')
+    --bulk insert #TableOrder from 'C:\Users\gduffie\Documents\GitHub\database-bootstrap\database\Tables\TableOrder.csv' with (datafiletype = 'char', firstrow = 2, tablock, format = 'csv')
     --set xact_abort off
 
     --if @debug >= 4 select '#TableOrder' as [#TableOrder], * from #TableOrder
@@ -1940,7 +2265,7 @@ begin
 
         select
              @sql_params = N'@sql_statement nvarchar(max)'
-            ,@sql = N'exec <<@database_name>>.sys.sp_executesql @sql_statement'
+            ,@sql = N'set quoted_identifier on; exec [<<@database_name>>].sys.sp_executesql @sql_statement;'
             ,@sql = replace(@sql, '<<@database_name>>', @database_name)
 
         set @ident = 1
@@ -2020,7 +2345,7 @@ declare @return int
 
 exec @return = master.dbo.upgrade_database
      @database_name = N'ScheduleWise'
-    ,@folder_path = N'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database'
+    ,@folder_path = N'C:\Users\gduffie\Documents\GitHub\database-bootstrap'
     --,@is_repository = 1
     --,@branch = 'development'
     ,@debug = 1
@@ -2031,7 +2356,7 @@ select @return as retval
 
 exec @return = master.dbo.install_tsqlt_tests
      @database_name = 'ScheduleWise'
-    ,@folder_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database'
+    ,@folder_path = 'C:\Users\gduffie\Documents\GitHub\database-bootstrap'
     ,@debug = 1
 
 select @return as retval
@@ -2041,5 +2366,477 @@ select @return as retval
 
 -- Run all tSQLt tests
 exec tSQLt.RunAll
+
+*/
+--====================================================================================================
+
+use master
+go
+
+if object_id('dbo.drop_database') is not null
+begin
+    drop procedure dbo.drop_database
+end
+go
+
+create procedure dbo.drop_database
+(
+     @database_name nvarchar(128) -- [Required]
+    ,@debug tinyint = 0
+)
+with encryption
+as
+
+set nocount on
+set xact_abort on
+set transaction isolation level read uncommitted
+
+/* Suggested @debug values
+1 = Simple print statements
+2 = Simple select statements (e.g. select @variable_1 as variable_1, @variable_2 as variable_2)
+3 = Result sets from temp tables (e.g. select '#temp_table_name' as '#temp_table_name' from #temp_table_name where ...)
+4 = @sql statements from exec() or sp_executesql
+*/
+
+if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [drop_database] START'
+
+declare
+     @return int = 0
+    ,@sql nvarchar(500)
+
+if exists (select 1 from sys.databases where name = @database_name)
+begin
+    if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [drop_database] Setting SINGLE_USER mode on database [' + @database_name + ']'
+
+    set @sql = 'ALTER DATABASE [' + @database_name + '] SET SINGLE_USER WITH ROLLBACK IMMEDIATE'
+
+    if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [drop_database] @sql: ' + isnull(@sql, '{null}')
+
+    begin try
+        exec @return = sp_executesql @sql
+    end try
+    begin catch
+        print error_message()
+        raiserror('Error setting SINGLE_USER mode.', 16, 1)
+        return @return
+    end catch
+
+    if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [drop_database] Dropping database [' + @database_name + ']'
+
+    set @sql = 'DROP DATABASE [' + @database_name + ']'
+
+    if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [drop_database] @sql: ' + isnull(@sql, '{null}')
+
+    begin try
+        exec @return = sp_executesql @sql
+    end try
+    begin catch
+        set @sql = 'ALTER DATABASE [' + @database_name + '] SET MULTI_USER'
+
+        exec @return = sp_executesql @sql
+
+        print error_message()
+        raiserror('Error dropping database.', 16, 1)
+        return @return
+    end catch
+end
+
+if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [drop_database] END'
+
+return @return
+
+go
+
+/* DEV TESTING
+
+create database foo
+
+select * from sys.databases where name = 'foo'
+
+exec master.dbo.drop_database
+     @database_name = 'foo'
+    ,@debug = 9
+
+select * from sys.databases where name = 'foo'
+
+*/
+--====================================================================================================
+
+use master
+go
+
+if object_id('dbo.restore_database') is not null
+begin
+    drop procedure dbo.restore_database
+end
+go
+
+create procedure dbo.restore_database
+(
+     @database_name nvarchar(128)               -- [Required] Does not have to be the same name as the backup. You can restore a Database.bak file as a database named "PaulHogan" if you want.
+    ,@file_path nvarchar(4000) = null           -- [Optional] The full file path to the .bak file (e.g., D:\SQL\Backups\Database.bak). If not supplied we will look in the default location.
+    ,@sql_data_directory nvarchar(500) = null   -- [Optional] Will use server default if not passed in.
+    ,@sql_log_directory nvarchar(500) = null    -- [Optional] Will use server default if not passed in.
+    ,@sql_ft_directory nvarchar(500) = null     -- [Optional] Will use server default if not passed in.
+    ,@file_number tinyint = null                -- [Optional] Will use the max(file_number) if not passed in.
+    ,@debug tinyint = 0
+)
+with encryption
+as
+
+set nocount on
+set xact_abort on
+set transaction isolation level read uncommitted
+
+/* Suggested @debug values
+1 = Simple print statements
+2 = Simple select statements (e.g. select @variable_1 as variable_1, @variable_2 as variable_2)
+3 = Result sets from temp tables (e.g. select '#temp_table_name' as '#temp_table_name' from #temp_table_name where ...)
+4 = @sql statements from exec() or sp_executesql
+*/
+
+if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] START'
+
+declare
+     @return int = 0
+    ,@sql nvarchar(max)
+    ,@header_sql nvarchar(max)
+    ,@filelist_sql nvarchar(max)
+    ,@restore_sql nvarchar(max)
+    ,@default_data_path nvarchar(4000)
+    ,@default_log_path nvarchar(4000)
+    ,@sql_version int = convert(int, serverproperty('ProductMajorVersion'))
+    ,@multi_path bit = 0
+    ,@first_full_path nvarchar(4000)
+    ,@directory nvarchar(4000) -- Directory only
+
+create table #headeronly
+(
+     BackupName nvarchar(128) null
+    ,BackupDescription nvarchar(255) null
+    ,BackupType smallint null
+    ,ExpirationDate datetime null
+    ,Compressed bit null
+    ,Position smallint null
+    ,DeviceType tinyint null
+    ,UserName nvarchar(128) null
+    ,ServerName nvarchar(128) null
+    ,DatabaseName nvarchar(128) null
+    ,DatabaseVersion int null
+    ,DatabaseCreationDate datetime null
+    ,BackupSize numeric(20,0) null
+    ,FirstLSN numeric(25,0) null
+    ,LastLSN numeric(25,0) null
+    ,CheckpointLSN numeric(25,0) null
+    ,DatabaseBackupLSN numeric(25,0) null
+    ,BackupStartDate datetime null
+    ,BackupFinishDate datetime null
+    ,SortOrder smallint null
+    ,[CodePage] smallint null
+    ,UnicodeLocaleId int null
+    ,UnicodeComparisonStyle int null
+    ,CompatibilityLevel tinyint null
+    ,SoftwareVendorId int null
+    ,SoftwareVersionMajor int null
+    ,SoftwareVersionMinor int null
+    ,SoftwareVersionBuild int null
+    ,MachineName nvarchar(128) null
+    ,Flags int null
+    ,BindingID uniqueidentifier null
+    ,RecoveryForkID uniqueidentifier null
+    ,Collation nvarchar(128) null
+    ,FamilyGUID uniqueidentifier null
+    ,HasBulkLoggedData bit null
+    ,IsSnapshot bit null
+    ,IsReadOnly bit null
+    ,IsSingleUser bit null
+    ,HasBackupChecksums bit null
+    ,IsDamaged bit null
+    ,BeginsLogChain bit null
+    ,HasIncompleteMetaData bit null
+    ,IsForceOffline bit null
+    ,IsCopyOnly bit null
+    ,FirstRecoveryForkID uniqueidentifier null
+    ,ForkPointLSN numeric(25,0) null
+    ,RecoveryModel nvarchar(60) null
+    ,DifferentialBaseLSN numeric(25,0) null
+    ,DifferentialBaseGUID uniqueidentifier null
+    ,BackupTypeDescription nvarchar(60) null
+    ,BackupSetGUID uniqueidentifier null
+    ,CompressedBackupSize numeric(20,0) null
+    --,Containment tinyint not null -- SQL 2012+
+)
+
+create table #filelistonly
+(
+     ident int not null identity(1, 1) primary key clustered
+    ,LogicalName varchar(255) null
+    ,PhysicalName varchar(255) null
+    ,[Type] char(1) null
+    ,FileGroupName varchar(50) null
+    ,Size bigint null
+    ,MaxSize bigint null
+    ,FileId int null
+    ,CreateLSN numeric(30,2) null
+    ,DropLSN numeric(30,2) null
+    ,UniqueId uniqueidentifier null
+    ,ReadOnlyLSN numeric(30,2) null
+    ,ReadWriteLSN numeric(30,2) null
+    ,BackupSizeInBytes bigint null
+    ,SourceBlockSize int null
+    ,FileGroupId int null
+    ,LogGroupGUID uniqueidentifier null
+    ,DifferentialBaseLSN numeric(30,2) null
+    ,DifferentialBaseGUID uniqueidentifier null
+    ,IsReadOnly int null
+    ,IsPresent int null
+    ,TDEThumbprint varchar(10) null
+--    ,SnapshotUrl nvarchar(360) null -- SQL 2016+
+)
+
+declare @filelistonly table
+(
+     ident int not null primary key clustered
+    ,LogicalName varchar(255) null
+    ,PhysicalName varchar(255) null
+    ,[Type] char(1) null
+    ,FileGroupName varchar(50) null
+    ,FileId int null
+    ,FileGroupId int null
+    ,NewLogicalName varchar(255) null
+    ,NewPhysicalName varchar(255) null
+    ,Directory varchar(255) null
+)
+
+if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] Product Major Version: ' + ltrim(str(@sql_version))
+
+/*
+11 = 2012
+12 = 2014
+13 = 2016
+14 = 2017
+*/
+
+if @sql_version >= 14 -- SQL 2017
+begin
+    alter table #headeronly add Containment tinyint not null
+    alter table #headeronly add KeyAlgorithm nvarchar(32) null
+    alter table #headeronly add EncryptorThumbprint varbinary(20) null
+    alter table #headeronly add EncryptorType nvarchar(32) null
+
+    alter table #filelistonly add SnapshotUrl nvarchar(360) null
+end
+else if @sql_version >= 13 -- SQL 2016
+begin
+    alter table #filelistonly add SnapshotUrl nvarchar(360) null
+end
+else if @sql_version >= 11 -- SQL 2012
+begin
+    alter table #headeronly add Containment tinyint not null
+end
+
+select
+     @sql_data_directory = nullif(@sql_data_directory, N'')
+    ,@sql_log_directory = nullif(@sql_log_directory, N'')
+    ,@sql_ft_directory = nullif(@sql_ft_directory, N'')
+
+--====================================================================================================
+
+if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] Validating restore path'
+
+if nullif(@file_path, '') is null -- The .bak name wasn't supplied either
+begin
+    if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @file_path was empty. Checking registry for default location.'
+
+    exec master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'Software\Microsoft\MSSQLServer\MSSQLServer', N'BackupDirectory', @directory output, 'no_output'
+
+    -- Now add @database_name and .bak to the @file_path
+    set @file_path = @directory + N'\' + @database_name + N'.bak'
+end
+else
+begin
+    -- Remove the database name and extension (since they won't exist on the first backup) and just validate the directory. If @file_path wasn't supplied then this step isn't necessary.
+    set @directory = substring(@file_path, 1, len(@file_path) - charindex('\', reverse(@file_path)))
+end
+
+-- TODO: Commenting out until I can fix the permission issues
+--exec @return = master.dbo.validate_path
+--     @path = @directory
+--    ,@is_file = 1
+--    ,@is_directory = 0
+--    ,@debug = @debug
+
+--if @return <> 0
+--begin
+--    raiserror('Invalid path [%s].', 16, 1, @directory)
+--    return @return
+--end
+
+--====================================================================================================
+
+if charindex(',', @file_path) > 0
+begin
+    set @multi_path = 1
+
+    -- Grab the first path
+    select @first_full_path = Item from master.dbo.udf_split_8k_string_single_delimiter(@file_path, ',') where ItemNumber = 1
+end
+else
+begin
+    set @first_full_path = @file_path
+end
+
+--====================================================================================================
+
+if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] Getting headers from ' + @file_path
+
+select
+     @header_sql = N'RESTORE HEADERONLY FROM DISK = N''<<@first_full_path>>''; '
+    ,@header_sql = replace(@header_sql, N'<<@first_full_path>>', @first_full_path)
+
+if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @header_sql: ' + isnull(@header_sql, N'{null}')
+
+insert #headeronly
+    exec(@header_sql)
+
+if @debug >= 3 select '#headeronly before' as '#headeronly', * from #headeronly
+
+if @file_number is null or @file_number < 1
+begin
+    if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] Getting maximum file_number (position)'
+
+    select @file_number = max(position) from #headeronly
+end
+
+--====================================================================================================
+
+if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] Getting filelist from ' + @first_full_path
+
+select
+     @filelist_sql = N'RESTORE FILELISTONLY FROM DISK = N''<<@first_full_path>>'' WITH FILE = <<@file_number>>; '
+    ,@filelist_sql = replace(@filelist_sql, N'<<@first_full_path>>', @first_full_path)
+    ,@filelist_sql = replace(@filelist_sql, N'<<@file_number>>', @file_number)
+
+if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @filelist_sql: ' + isnull(@filelist_sql, '{null}')
+
+-- Don't need everything returned by FILELISTONLY but do need to add some additional columns for processing. Easier to just insert into another table (@filelistonly) instead of altering temp table.
+insert #filelistonly
+    exec(@filelist_sql)
+
+if @debug >= 6 select '#filelistonly' as '#filelistonly', * from #filelistonly
+
+insert @filelistonly (ident, LogicalName, PhysicalName, [Type], FileGroupName, FileId, FileGroupId)
+    select ident, LogicalName, PhysicalName, [Type], FileGroupName, FileId, FileGroupId from #filelistonly
+
+if @debug >= 3 select '@filelistonly before' as '@filelistonly', * from @filelistonly
+
+--====================================================================================================
+
+if @sql_data_directory is null or @sql_log_directory is null or @sql_ft_directory is null
+begin
+    if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] Find the default data and log paths'
+
+    exec master.dbo.get_default_database_location
+         @default_data_path = @default_data_path output
+        ,@default_log_path = @default_log_path output
+        ,@debug = @debug
+
+    if @sql_data_directory is null set @sql_data_directory = @default_data_path
+    if @sql_log_directory is null set @sql_log_directory = @default_log_path
+    if @sql_ft_directory is null set @sql_ft_directory = @default_log_path
+
+    if @debug >= 1
+    begin
+        print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @sql_data_directory: ' + isnull(@sql_data_directory, N'{null}')
+        print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @sql_log_directory: ' + isnull(@sql_log_directory, N'{null}')
+        print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @sql_ft_directory: ' + isnull(@sql_ft_directory, N'{null}')
+    end
+end
+
+--====================================================================================================
+
+if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] Setting SQL paths and database logical names'
+
+update @filelistonly set Directory = '<<@sql_data_directory>>', NewLogicalName = '<<@database_name>>', NewPhysicalName = '<<@database_name>>.mdf' where [type] = 'D' and FileGroupName = 'PRIMARY' and FileId = 1
+update @filelistonly set Directory = '<<@sql_data_directory>>', NewLogicalName = '<<@database_name>>_audit', NewPhysicalName = '<<@database_name>>_audit.ndf' where [type] = 'D' and FileGroupName = 'AUDIT'
+update @filelistonly set Directory = '<<@sql_data_directory>>', NewLogicalName = '<<@database_name>>_indexes', NewPhysicalName = '<<@database_name>>_indexes.ndf' where [type] = 'D' and FileGroupName = 'INDEXES'
+update @filelistonly set Directory = '<<@sql_data_directory>>', NewLogicalName = '<<@database_name>>_data', NewPhysicalName = '<<@database_name>>_data.ndf' where [type] = 'D' and FileGroupName = 'DATA'
+update @filelistonly set Directory = '<<@sql_log_directory>>', NewLogicalName = '<<@database_name>>_log', NewPhysicalName = '<<@database_name>>_log.ldf' where [type] = 'L' and FileGroupId = 0
+update @filelistonly set Directory = '<<@sql_ft_directory>>', NewLogicalName = '<<@database_name>>_fulltext', NewPhysicalName = '<<@database_name>>_fulltext.ndf' where [type] = 'F' or FileGroupName like '%OtherTables%' or LogicalName like 'ftrow[_]%'
+update @filelistonly set Directory = '<<@sql_data_directory>>', NewLogicalName = '<<@database_name>>_temp_storage', NewPhysicalName = '<<@database_name>>_temp_storage.ndf' where [type] = 'D' and FileGroupName like '%Temp_Storage%'
+
+if @debug >= 2 select '@filelistonly after' as '@filelistonly', * from @filelistonly
+
+--====================================================================================================
+
+-- Check for multiple file paths
+if @multi_path = 1
+begin
+    set @restore_sql = N'RESTORE DATABASE [<<@database_name>>] FROM DISK = N''<<@first_full_path>>'''
+
+    select @restore_sql = @restore_sql + N', DISK = N''' + Item + '''' from master.dbo.split_8k_string_single_delimiter(@file_path, ',') where ItemNumber > 1
+
+    set @restore_sql = @restore_sql + N' WITH FILE = <<@file_number>>'
+end
+else
+begin
+    set @restore_sql = N'RESTORE DATABASE [<<@database_name>>] FROM DISK = N''<<@first_full_path>>'' WITH FILE = <<@file_number>>'
+end
+
+select @restore_sql = @restore_sql + ', MOVE N''' + LogicalName + ''' TO N''' + Directory + '' + NewPhysicalName + ''''
+from @filelistonly
+
+select
+     @restore_sql = @restore_sql + ', NOUNLOAD, REPLACE, STATS = 10'
+    ,@restore_sql = replace(@restore_sql, N'<<@database_name>>', @database_name)
+    ,@restore_sql = replace(@restore_sql, N'<<@first_full_path>>', @first_full_path)
+    ,@restore_sql = replace(@restore_sql, N'<<@file_number>>', @file_number)
+    ,@restore_sql = replace(@restore_sql, N'<<@sql_data_directory>>', master.dbo.directory_slash(null, @sql_data_directory, N'\'))
+    ,@restore_sql = replace(@restore_sql, N'<<@sql_log_directory>>', master.dbo.directory_slash(null, @sql_log_directory, N'\'))
+    ,@restore_sql = replace(@restore_sql, N'<<@sql_ft_directory>>', master.dbo.directory_slash(null, @sql_ft_directory, N'\'))
+
+if @debug >= 3 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @restore_sql (2): ' + isnull(@restore_sql, N'{null}')
+
+if @restore_sql is null
+begin
+    raiserror('@restore_sql is null', 16, 1)
+    return -1
+end
+
+if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] Running drop_database on [' + @database_name + ']'
+
+-- By setting @debug to 255 you can skip the drop. Useful when you want to spit out the SQL at the bottom without actually running anything.
+if @debug <> 255
+begin
+    exec master.dbo.drop_database
+         @database_name = @database_name
+        ,@debug = @debug
+end
+
+if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] Restoring database [' + @database_name + ']'
+
+if @debug <> 255 exec sp_executesql @restore_sql
+
+if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] END'
+
+return @return
+
+go
+
+/* DEV TESTING
+
+exec master.dbo.restore_database
+     @database_name = 'foo'
+    ,@file_path = 'D:\Databases\Database.bak' -- has 2 file numbers
+    ,@sql_data_directory = 'D:\SQL\Data'
+    ,@sql_log_directory = 'D:\SQL\Log'
+    ,@sql_ft_directory = 'D:\SQL\FT'
+    ,@file_number = 2
+    ,@debug = 9
+
+exec master.dbo.restore_database
+     @database_name = 'foo_test'
+    ,@file_path = 'D:\Databases\Database.bak' -- has 2 file numbers
+    ,@debug = 255
 
 */

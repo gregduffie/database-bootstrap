@@ -12,7 +12,7 @@ go
 create procedure dbo.restore_database
 (
      @database_name nvarchar(128)               -- [Required] Does not have to be the same name as the backup. You can restore a Database.bak file as a database named "PaulHogan" if you want.
-    ,@full_path nvarchar(4000) = null           -- [Optional] The full path to the .bak file (e.g., D:\SQL\Backups\Database.bak). If not supplied we will look in the default location.
+    ,@file_path nvarchar(4000) = null           -- [Optional] The full file path to the .bak file (e.g., D:\SQL\Backups\Database.bak). If not supplied we will look in the default location.
     ,@sql_data_directory nvarchar(500) = null   -- [Optional] Will use server default if not passed in.
     ,@sql_log_directory nvarchar(500) = null    -- [Optional] Will use server default if not passed in.
     ,@sql_ft_directory nvarchar(500) = null     -- [Optional] Will use server default if not passed in.
@@ -43,7 +43,7 @@ declare
     ,@restore_sql nvarchar(max)
     ,@default_data_path nvarchar(4000)
     ,@default_log_path nvarchar(4000)
-    ,@sql_version varchar(20) = convert(varchar(20), serverproperty('productversion'))
+    ,@sql_version int = convert(int, serverproperty('ProductMajorVersion'))
     ,@multi_path bit = 0
     ,@first_full_path nvarchar(4000)
     ,@directory nvarchar(4000) -- Directory only
@@ -98,18 +98,12 @@ create table #headeronly
     ,ForkPointLSN numeric(25,0) null
     ,RecoveryModel nvarchar(60) null
     ,DifferentialBaseLSN numeric(25,0) null
-    ,DifferentialBaseGUID uniqueidentifier
+    ,DifferentialBaseGUID uniqueidentifier null
     ,BackupTypeDescription nvarchar(60) null
     ,BackupSetGUID uniqueidentifier null
     ,CompressedBackupSize numeric(20,0) null
     --,Containment tinyint not null -- SQL 2012+
 )
-
--- SQL 2012+ added a new column
-if left(@sql_version, charindex('.', @sql_version) - 1) >= 11
-begin
-    alter table #headeronly add Containment tinyint not null
-end
 
 create table #filelistonly
 (
@@ -135,6 +129,7 @@ create table #filelistonly
     ,IsReadOnly int null
     ,IsPresent int null
     ,TDEThumbprint varchar(10) null
+--    ,SnapshotUrl nvarchar(360) null -- SQL 2016+
 )
 
 declare @filelistonly table
@@ -151,6 +146,33 @@ declare @filelistonly table
     ,Directory varchar(255) null
 )
 
+if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] Product Major Version: ' + ltrim(str(@sql_version))
+
+/*
+11 = 2012
+12 = 2014
+13 = 2016
+14 = 2017
+*/
+
+if @sql_version >= 14 -- SQL 2017
+begin
+    alter table #headeronly add Containment tinyint not null
+    alter table #headeronly add KeyAlgorithm nvarchar(32) null
+    alter table #headeronly add EncryptorThumbprint varbinary(20) null
+    alter table #headeronly add EncryptorType nvarchar(32) null
+
+    alter table #filelistonly add SnapshotUrl nvarchar(360) null
+end
+else if @sql_version >= 13 -- SQL 2016
+begin
+    alter table #filelistonly add SnapshotUrl nvarchar(360) null
+end
+else if @sql_version >= 11 -- SQL 2012
+begin
+    alter table #headeronly add Containment tinyint not null
+end
+
 select
      @sql_data_directory = nullif(@sql_data_directory, N'')
     ,@sql_log_directory = nullif(@sql_log_directory, N'')
@@ -160,42 +182,51 @@ select
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] Validating restore path'
 
-if nullif(@full_path, '') is null -- The .bak name wasn't supplied either
+if nullif(@file_path, '') is null -- The .bak name wasn't supplied either
 begin
-    if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @full_path was empty. Checking registry for default location.'
+    if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @file_path was empty. Checking registry for default location.'
 
     exec master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'Software\Microsoft\MSSQLServer\MSSQLServer', N'BackupDirectory', @directory output, 'no_output'
 
-    -- Now add @database_name and .bak to the @full_path
-    set @full_path = @directory + N'\' + @database_name + N'.bak'
+    -- Now add @database_name and .bak to the @file_path
+    set @file_path = @directory + N'\' + @database_name + N'.bak'
 end
 else
 begin
-    -- Remove the database name and extension (since they won't exist on the first backup) and just validate the directory. If @full_path wasn't supplied then this step isn't necessary.
-    set @directory = substring(@full_path, 1, len(@full_path) - charindex('\', reverse(@full_path)))
+    -- Remove the database name and extension (since they won't exist on the first backup) and just validate the directory. If @file_path wasn't supplied then this step isn't necessary.
+    set @directory = substring(@file_path, 1, len(@file_path) - charindex('\', reverse(@file_path)))
 end
 
-exec @return = master.dbo.rp_validate_path
-     @path = @directory
-    ,@debug = @debug
+-- TODO: Commenting out until I can fix the permission issues
+--exec @return = master.dbo.validate_path
+--     @path = @directory
+--    ,@is_file = 1
+--    ,@is_directory = 0
+--    ,@debug = @debug
+
+--if @return <> 0
+--begin
+--    raiserror('Invalid path [%s].', 16, 1, @directory)
+--    return @return
+--end
 
 --====================================================================================================
 
-if charindex(',', @full_path) > 0
+if charindex(',', @file_path) > 0
 begin
     set @multi_path = 1
 
     -- Grab the first path
-    select @first_full_path = Item from master.dbo.rf_split_8k_string_single_delimiter(@full_path, ',') where ItemNumber = 1
+    select @first_full_path = Item from master.dbo.udf_split_8k_string_single_delimiter(@file_path, ',') where ItemNumber = 1
 end
 else
 begin
-    set @first_full_path = @full_path
+    set @first_full_path = @file_path
 end
 
 --====================================================================================================
 
-if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] Getting headers from ' + @full_path
+if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] Getting headers from ' + @file_path
 
 select
      @header_sql = N'RESTORE HEADERONLY FROM DISK = N''<<@first_full_path>>''; '
@@ -243,7 +274,7 @@ if @sql_data_directory is null or @sql_log_directory is null or @sql_ft_director
 begin
     if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] Find the default data and log paths'
 
-    exec master.dbo.rp_get_default_database_location
+    exec master.dbo.get_default_database_location
          @default_data_path = @default_data_path output
         ,@default_log_path = @default_log_path output
         ,@debug = @debug
@@ -281,7 +312,7 @@ if @multi_path = 1
 begin
     set @restore_sql = N'RESTORE DATABASE [<<@database_name>>] FROM DISK = N''<<@first_full_path>>'''
 
-    select @restore_sql = @restore_sql + N', DISK = N''' + Item + '''' from master.dbo.rf_split_8k_string_single_delimiter(@full_path, ',') where ItemNumber > 1
+    select @restore_sql = @restore_sql + N', DISK = N''' + Item + '''' from master.dbo.split_8k_string_single_delimiter(@file_path, ',') where ItemNumber > 1
 
     set @restore_sql = @restore_sql + N' WITH FILE = <<@file_number>>'
 end
@@ -298,9 +329,9 @@ select
     ,@restore_sql = replace(@restore_sql, N'<<@database_name>>', @database_name)
     ,@restore_sql = replace(@restore_sql, N'<<@first_full_path>>', @first_full_path)
     ,@restore_sql = replace(@restore_sql, N'<<@file_number>>', @file_number)
-    ,@restore_sql = replace(@restore_sql, N'<<@sql_data_directory>>', master.dbo.rf_directory_slash(null, @sql_data_directory, N'\'))
-    ,@restore_sql = replace(@restore_sql, N'<<@sql_log_directory>>', master.dbo.rf_directory_slash(null, @sql_log_directory, N'\'))
-    ,@restore_sql = replace(@restore_sql, N'<<@sql_ft_directory>>', master.dbo.rf_directory_slash(null, @sql_ft_directory, N'\'))
+    ,@restore_sql = replace(@restore_sql, N'<<@sql_data_directory>>', master.dbo.directory_slash(null, @sql_data_directory, N'\'))
+    ,@restore_sql = replace(@restore_sql, N'<<@sql_log_directory>>', master.dbo.directory_slash(null, @sql_log_directory, N'\'))
+    ,@restore_sql = replace(@restore_sql, N'<<@sql_ft_directory>>', master.dbo.directory_slash(null, @sql_ft_directory, N'\'))
 
 if @debug >= 3 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @restore_sql (2): ' + isnull(@restore_sql, N'{null}')
 
@@ -334,7 +365,7 @@ go
 
 exec master.dbo.restore_database
      @database_name = 'foo'
-    ,@full_path = 'D:\Databases\Database.bak' -- has 2 file numbers
+    ,@file_path = 'D:\Databases\Database.bak' -- has 2 file numbers
     ,@sql_data_directory = 'D:\SQL\Data'
     ,@sql_log_directory = 'D:\SQL\Log'
     ,@sql_ft_directory = 'D:\SQL\FT'
@@ -343,7 +374,7 @@ exec master.dbo.restore_database
 
 exec master.dbo.restore_database
      @database_name = 'foo_test'
-    ,@full_path = 'D:\Databases\Database.bak' -- has 2 file numbers
+    ,@file_path = 'D:\Databases\Database.bak' -- has 2 file numbers
     ,@debug = 255
 
 */
