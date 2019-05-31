@@ -101,7 +101,7 @@ declare
     ,@branch varchar(50)
 
 set @repository_path = 'C:\Users\username\Documents\GitHub\repository-name'
-set @branch = 'development'
+set @branch = 'develop'
 
 exec @return = master.dbo.validate_repository
      @repository_path = @repository_path
@@ -111,3 +111,4 @@ exec @return = master.dbo.validate_repository
 select @return as [return]
 
 */
+

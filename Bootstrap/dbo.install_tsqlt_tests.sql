@@ -207,3 +207,4 @@ select @sql = @sql + 'exec tSQLt.DropClass ''' + schema_name([schema_id]) + '''
 exec sp_executesql @sql
 
 */
+

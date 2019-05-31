@@ -90,3 +90,4 @@ exec master.dbo.drop_database
 select * from sys.databases where name = 'foo'
 
 */
+

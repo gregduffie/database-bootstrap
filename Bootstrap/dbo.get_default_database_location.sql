@@ -83,7 +83,7 @@ begin
     if @default_data_path is null
     begin
         /* Wow, either something's *really* wrong or you're using a very old version of SQL Server! */
-        
+
         if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [get_default_database_location] Trying any user database method'
 
         -- Look for the most recent, non-system database and see what they are using.
@@ -144,3 +144,4 @@ exec master.dbo.get_default_database_location
 select @default_data_path as default_data_path, @default_log_path as default_log_path
 
 */
+

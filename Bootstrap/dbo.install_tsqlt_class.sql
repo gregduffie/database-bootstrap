@@ -179,3 +179,4 @@ exec master.dbo.install_tsqlt_class
     ,@debug = 6
 
 */
+

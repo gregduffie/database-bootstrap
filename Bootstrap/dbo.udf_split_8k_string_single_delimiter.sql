@@ -69,3 +69,4 @@ declare
 select * from dbo.udf_split_8k_string_single_delimiter(@string, @delimiter)
 
 */
+
