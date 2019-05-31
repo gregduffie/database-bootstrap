@@ -105,6 +105,7 @@ declare
 select * from dbo.udf_split_8k_string_single_delimiter(@string, @delimiter)
 
 */
+
 --====================================================================================================
 
 use master
@@ -196,6 +197,7 @@ Examples:
 */
 
 go
+
 --====================================================================================================
 
 use master
@@ -469,6 +471,7 @@ begin
 end
 
 */
+
 --====================================================================================================
 
 use master
@@ -572,7 +575,7 @@ declare
     ,@branch varchar(50)
 
 set @repository_path = 'C:\Users\username\Documents\GitHub\repository-name'
-set @branch = 'development'
+set @branch = 'develop'
 
 exec @return = master.dbo.validate_repository
      @repository_path = @repository_path
@@ -582,6 +585,7 @@ exec @return = master.dbo.validate_repository
 select @return as [return]
 
 */
+
 --====================================================================================================
 
 use master
@@ -659,6 +663,7 @@ exec @return = master.dbo.validate_database
 select @return
 
 */
+
 --====================================================================================================
 
 use master
@@ -756,6 +761,7 @@ exec master.dbo.list_files
     ,@debug = 2
 
 */
+
 --====================================================================================================
 
 use master
@@ -866,6 +872,7 @@ exec master.dbo.clean_file
     ,@debug = @debug
 
 */
+
 --====================================================================================================
 
 use master
@@ -1340,6 +1347,7 @@ exec master.dbo.parse_file
      @file_content = @file_content
     ,@debug = 1
 */
+
 --====================================================================================================
 
 use master
@@ -1425,7 +1433,7 @@ begin
     if @default_data_path is null
     begin
         /* Wow, either something's *really* wrong or you're using a very old version of SQL Server! */
-        
+
         if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [get_default_database_location] Trying any user database method'
 
         -- Look for the most recent, non-system database and see what they are using.
@@ -1486,6 +1494,7 @@ exec master.dbo.get_default_database_location
 select @default_data_path as default_data_path, @default_log_path as default_log_path
 
 */
+
 --====================================================================================================
 
 use master
@@ -1712,6 +1721,7 @@ exec master.dbo.install_tsqlt_class
     ,@debug = 6
 
 */
+
 --====================================================================================================
 
 use master
@@ -1921,6 +1931,7 @@ select @sql = @sql + 'exec tSQLt.DropClass ''' + schema_name([schema_id]) + '''
 exec sp_executesql @sql
 
 */
+
 --====================================================================================================
 
 use master
@@ -2329,6 +2340,7 @@ select @return as retval
 exec tSQLt.RunAll
 
 */
+
 --====================================================================================================
 
 use master
@@ -2421,6 +2433,7 @@ exec master.dbo.drop_database
 select * from sys.databases where name = 'foo'
 
 */
+
 --====================================================================================================
 
 use master
@@ -2800,3 +2813,4 @@ exec master.dbo.restore_database
     ,@debug = 255
 
 */
+
