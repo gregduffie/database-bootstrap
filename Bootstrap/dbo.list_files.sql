@@ -11,7 +11,7 @@ go
 
 create procedure dbo.list_files
 (
-     @folder_path varchar(260)      -- [Required] Path to folder (i.e., C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\)
+     @folder_path varchar(260)      -- [Required] Path to folder (i.e., C:\Users\username\Documents\GitHub\repository-name\)
     ,@include_subfolders bit = 0    -- [Optional] Defaults to exclude subfolders
     ,@extension varchar(10) = 'sql' -- [Required] No period or slash necessary
     ,@debug tinyint = 0
@@ -82,14 +82,14 @@ go
 /* DEV TESTING
 
 exec master.dbo.list_files
-     @folder_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\'
+     @folder_path = 'C:\Users\username\Documents\GitHub\repository-name\'
     ,@include_subfolders = 1
     ,@extension = 'sql'
     ,@debug = 2
 
 -- Not sure when this would ever happen...
 exec master.dbo.list_files
-     @folder_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\database\revisions\Revisions_2.x.x.sql'
+     @folder_path = 'C:\Users\username\Documents\GitHub\repository-name\database\revisions\Revisions_2.x.x.sql'
     ,@include_subfolders = 1
     ,@extension = 'sql'
     ,@debug = 2

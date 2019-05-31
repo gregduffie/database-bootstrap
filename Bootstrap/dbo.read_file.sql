@@ -11,7 +11,7 @@ go
 
 create procedure dbo.read_file
 (
-     @file_path varchar(260)                    -- [Required] Path to file (i.e., C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\database\Stored Procedures\dbo.GetUsers.sql)
+     @file_path varchar(260)                    -- [Required] Path to file (i.e., C:\Users\username\Documents\GitHub\repository-name\database\Stored Procedures\dbo.GetUsers.sql)
     ,@file_content nvarchar(max) = null output  -- [Optional] No need to pass anything.
     ,@debug tinyint = 0
 )
@@ -89,7 +89,7 @@ declare
     ,@debug tinyint
 
 select
-     @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\database\Revisions\Revisions_2.x.x.sql'
+     @file_path = 'C:\Users\username\Documents\GitHub\repository-name\database\Revisions\Revisions_2.x.x.sql'
     ,@debug = 4
 
 exec master.dbo.read_file

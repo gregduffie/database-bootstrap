@@ -9,7 +9,7 @@ begin
 end
 go
 
-create function dbo.directory_slash 
+create function dbo.directory_slash
 (
      @beginning_slash varchar(3)
     ,@directory varchar(260)
@@ -89,4 +89,3 @@ Examples:
 */
 
 go
-

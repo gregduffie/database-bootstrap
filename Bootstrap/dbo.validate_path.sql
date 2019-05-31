@@ -11,7 +11,7 @@ go
 
 create procedure dbo.validate_path
 (
-     @path varchar(260)                     -- [Required] A folder/directory or full file path including the file name and extension. TODO: Return an @is_file param.
+     @path varchar(260)                     -- [Required] A folder/directory or full file path including the file name and extension.
     ,@is_file bit = null output             -- [Optional] Returns 1 if @path points to a file. If you pass a value into @is_file then it will throw an error if the @path is not what you expect.
     ,@is_directory bit = null output        -- [Optional] Returns 1 if @path points to a directory. If you pass a value into @is_directory then it will throw an error if the @path is not what you expect.
     ,@debug tinyint = 0

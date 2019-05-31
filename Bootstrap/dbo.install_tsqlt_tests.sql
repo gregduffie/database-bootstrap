@@ -12,7 +12,7 @@ go
 create procedure dbo.install_tsqlt_tests
 (
      @database_name nvarchar(128)   -- [Required] The database where you want to install the tSQLt class
-    ,@folder_path varchar(260)      -- [Required] Path to the folder above the database folder (i.e., C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database)
+    ,@folder_path varchar(260)      -- [Required] Path to the folder containing the Tests (i.e., C:\Users\username\Documents\GitHub\repository-name\database\Tests)
     ,@debug tinyint = 0
 )
 as
@@ -38,15 +38,14 @@ declare
     ,@rowcount int
 
 declare @output table (test_class nvarchar(max) null)
+
 create table #loadoutput (ident int not null identity(1, 1) primary key clustered, ret_code int, test_class nvarchar(1000), command_output nvarchar(max))
 
 --====================================================================================================
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [install_tsqlt_tests] Running validate_path'
 
--- Add \database\tests\ to the end of @path if it doesn't exist
--- BUG: This will fail if @path looks like this: C:\Users\gduffie\DATABASE\TESTS\GitHub\fmc-schedulewise
-if patindex('%\database\tests%', @folder_path) = 0 set @folder_path = dbo.directory_slash(null, @folder_path, '\') + 'database\tests\'
+set @folder_path = dbo.directory_slash(null, @folder_path, '\')
 
 -- Validate path
 exec @return = master.dbo.validate_path
@@ -150,6 +149,7 @@ begin
             begin
                 insert into #loadoutput (command_output)
                     exec xp_cmdshell @xp_cmdshell
+
                 update #loadoutput
                     set ret_code = @return
                         ,test_class = @test_class
@@ -168,7 +168,7 @@ end
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [install_tsqlt_tests] END'
 
 if exists (select 1 from #loadoutput)
-    select * from #loadoutput where command_output is not null order by ident
+    select ident, ret_code, test_class, command_output from #loadoutput where command_output is not null order by ident
 
 return @return
 
@@ -176,17 +176,17 @@ go
 
 /*
 
-use ScheduleWise
+use Sandbox
 go
 
 exec master.dbo.upgrade_database
-     @database_name = 'ScheduleWise'
-    ,@folder_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database'
+     @database_name = 'Sandbox'
+    ,@folder_path = 'C:\Users\username\Documents\GitHub\repository-name\database\Tests'
     ,@debug = 1
 
 exec master.dbo.install_tsqlt_tests
-     @database_name = 'ScheduleWise'
-    ,@folder_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database'
+     @database_name = 'Sandbox'
+    ,@folder_path = 'C:\Users\username\Documents\GitHub\repository-name\database'
     ,@debug = 1
 
 -- Run all tSQLt tests

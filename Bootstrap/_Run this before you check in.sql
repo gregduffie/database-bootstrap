@@ -6,7 +6,10 @@ declare
     ,@sql nvarchar(1000)
     ,@test_database_name nvarchar(128) = 'tSQLt'
     ,@full_path_to_tsqlt_backup nvarchar(128) = 'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Backup\tSQLt.bak'
-    ,@database_repository_path nvarchar(128) = 'C:\Users\gduffie\Documents\GitHub\database-bootstrap'
+    ,@folder_path nvarchar(128) = 'C:\Users\gduffie\Documents\GitHub\database-bootstrap'
+    ,@test_folder_path nvarchar(128)
+
+set @test_folder_path = @folder_path + '\Tests'
 
 -- Restore Test Database
 exec @return = master.dbo.restore_database
@@ -19,9 +22,9 @@ if @return <> 0 return
 -- Upgrade Test Database
 exec @return = master.dbo.upgrade_database
      @database_name = @test_database_name
-    ,@folder_path = @database_repository_path
-    --,@is_repository = 1
-    --,@branch = 'dev'
+    ,@folder_path = @folder_path
+    ,@folder_exclusions = 'Build,Bootstrap,Jobs,Roles,Scripts,Tests,Users'
+    ,@file_exclusions = 'dbo.JSONHierarchy.sql,dbo.udf_ToJSON.sql'
     ,@debug = 1
 
 if @return <> 0 return
@@ -29,7 +32,7 @@ if @return <> 0 return
 -- Install tSQLt tests on Test Database
 exec @return = master.dbo.install_tsqlt_tests
      @database_name = @test_database_name
-    ,@folder_path = @database_repository_path
+    ,@folder_path = @test_folder_path
     ,@debug = 1
 
 if @return <> 0 return

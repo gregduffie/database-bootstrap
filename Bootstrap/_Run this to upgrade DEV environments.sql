@@ -6,37 +6,37 @@ declare
     ,@sql_params nvarchar(100)
     ,@sql nvarchar(1000)
     ,@failures int
+    ,@database_name nvarchar(128) = 'DEV'
     ,@test_database_name nvarchar(128) = 'tSQLt'
-    ,@schedulewise_database_name nvarchar(128) = 'DEV'
-    ,@full_path_to_tsqlt_backup nvarchar(128) = 'C:\Program Files\Microsoft SQL Server\MSSQL11.MSSQLSERVER\MSSQL\Backup\tSQLt.bak'
-    ,@database_repository_path nvarchar(128) = 'C:\GitHub\database-bootstrap'
-    ,@branch varchar(50)
+    ,@full_path_to_tsqlt_backup nvarchar(128) = 'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Backup\tSQLt_v4.bak'
+    ,@folder_path nvarchar(128) = 'C:\GitHub\database-bootstrap'
+    ,@test_folder_path nvarchar(128)
 
-set @branch = case @schedulewise_database_name when 'DEV' then 'dev' when 'QA' then 'qa' when 'STG' then 'staging' else null end
+set @test_folder_path = @folder_path + '\Tests'
 
 -- Restore Test Database
 exec @return = master.dbo.restore_database
      @database_name = @test_database_name
     ,@file_path = @full_path_to_tsqlt_backup
-    ,@debug = 1
+    ,@debug = 0
 
 if @return <> 0 return
 
 -- Upgrade Test Database
 exec @return = master.dbo.upgrade_database
      @database_name = @test_database_name
-    ,@folder_path = @database_repository_path
-    ,@is_repository = 1
-    ,@branch = @branch
-    ,@debug = 1
+    ,@folder_path = @folder_path
+    ,@folder_exclusions = 'Build,Bootstrap,Jobs,Roles,Scripts,Tests,Users'
+    ,@file_exclusions = 'dbo.JSONHierarchy.sql,dbo.udf_ToJSON.sql'
+    ,@debug = 0
 
 if @return <> 0 return
 
 -- Install tSQLt tests on Test Database
 exec @return = master.dbo.install_tsqlt_tests
      @database_name = @test_database_name
-    ,@folder_path = @database_repository_path
-    ,@debug = 1
+    ,@folder_path = @test_folder_path
+    ,@debug = 0
 
 if @return <> 0 return
 
@@ -65,11 +65,11 @@ if @failures = 0
 begin
     -- Upgrade the "Real" Database
     exec @return = master.dbo.upgrade_database
-         @database_name = @schedulewise_database_name
-        ,@folder_path = @database_repository_path
-        ,@is_repository = 1
-        ,@branch = @branch
-        ,@debug = 1
+         @database_name = @database_name
+        ,@folder_path = @folder_path
+        ,@folder_exclusions = 'Build,Bootstrap,Jobs,Roles,Scripts,Tests,Users'
+        ,@file_exclusions = 'dbo.JSONHierarchy.sql,dbo.udf_ToJSON.sql'
+        ,@debug = 0
 end
 
 go
@@ -79,9 +79,7 @@ go
 -- Upgrade the "Real" Database
 exec master.dbo.upgrade_database
      @database_name = 'DEV'
-    ,@folder_path = 'C:\GitHub\fmc-schedulewise-database'
-    ,@is_repository = 1
-    ,@branch = 'dev'
+    ,@folder_path = 'C:\GitHub\fmc-schedulewise-database\database'
     ,@debug = 1
 
 */

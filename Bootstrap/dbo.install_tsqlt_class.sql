@@ -165,17 +165,17 @@ go
 
 /*
 
-use ScheduleWise
+use Sandbox
 go
 
 exec master.dbo.install_tsqlt_tests
-     @database_name = 'ScheduleWise'
-    ,@folder_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise\database\Tests'
+     @database_name = 'Sandbox'
+    ,@folder_path = 'C:\Users\username\Documents\GitHub\repository-name\database\Tests'
     ,@debug = 6
 
 exec master.dbo.install_tsqlt_class
-     @database_name = 'ScheduleWise'
-    ,@file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise\Database\Tests\tSQLt.class.sql'
+     @database_name = 'Sandbox'
+    ,@file_path = 'C:\Users\username\Documents\GitHub\repository-name\Database\Tests\tSQLt.class.sql'
     ,@debug = 6
 
 */

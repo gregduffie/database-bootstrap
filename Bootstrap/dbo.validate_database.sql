@@ -11,7 +11,7 @@ go
 
 create procedure dbo.validate_database
 (
-     @database_name varchar(128)
+     @database_name varchar(128)    -- TODO: Handle database name with/without brackets
     ,@debug tinyint = 0
 )
 with encryption

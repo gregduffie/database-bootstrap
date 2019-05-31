@@ -11,7 +11,7 @@ go
 
 create procedure dbo.validate_repository
 (
-     @repository_path nvarchar(2000)    -- [Required] The full path to the repository folder (e.g., C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database).
+     @repository_path nvarchar(2000)    -- [Required] The full path to the base of the repository (e.g., C:\Users\username\Documents\GitHub\repository-name) where the (hidden) .git folder is located.
     ,@branch varchar(50) = null         -- [Optional] The branch that you are expecting to be checked out (i.e., "ref: refs/heads/development").
     ,@debug tinyint = 0
 )
@@ -100,7 +100,7 @@ declare
     ,@repository_path nvarchar(2000)
     ,@branch varchar(50)
 
-set @repository_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database'
+set @repository_path = 'C:\Users\username\Documents\GitHub\repository-name'
 set @branch = 'development'
 
 exec @return = master.dbo.validate_repository

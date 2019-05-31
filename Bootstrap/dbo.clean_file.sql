@@ -251,8 +251,8 @@ declare
     ,@file_content nvarchar(max)
     ,@debug tinyint
 
---set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\database\Post Processing\0100 Rollover SP_Log Table.sql'
-set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\database\Revisions\Revisions_2.x.x.sql'
+--set @file_path = 'C:\Users\username\Documents\GitHub\repository-name\database\Post Processing\0100 Rollover SP_Log Table.sql'
+set @file_path = 'C:\Users\username\Documents\GitHub\repository-name\database\Revisions\Revisions_2.x.x.sql'
 
 set @debug = 6
 

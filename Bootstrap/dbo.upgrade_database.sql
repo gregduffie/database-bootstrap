@@ -11,10 +11,10 @@ go
 
 create procedure dbo.upgrade_database
 (
-     @database_name nvarchar(128)   -- [Required] ScheduleWise, FMCSW_DEV, FMCSW_QA, FMCSW_STG, FMCSW
-    ,@folder_path varchar(260)      -- [Required] Path to the folder above the database folder (i.e., C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database)
-    ,@is_repository bit = 0         -- [Required] If "yes" then we will verify that it's a valid GitHub repository.
-    ,@branch varchar(50) = null     -- [Required/Optional] If @is_repository = 1 then @branch is required. Otherwise @branch is optional.
+     @database_name nvarchar(128)       -- [Required] Database name with or without brackets
+    ,@folder_path varchar(260)          -- [Required] Path to the folder to install (i.e., C:\Users\username\Documents\GitHub\repository-name\folder)
+    ,@folder_exclusions nvarchar(max)   -- Comma-separated list of folders to exclude (e.g., Build, Roles, Security)
+    ,@file_exclusions nvarchar(max)     -- Comma-separated list of files to exclude (e.g., vwSchemaBoundView.sql, SpecialScriptFile.sql)
     ,@debug tinyint = 0
 )
 with encryption
@@ -59,39 +59,15 @@ declare
 
 declare @files table ([file_path] nvarchar(260) null, [file_name] nvarchar(260) null, module_type char(2) null, module_name varchar(128) null, sortby int null)
 
+declare @exclusions table (exclude nvarchar(260) not null)
+
 declare @script table (ident int not null, sql_statement nvarchar(max) not null)
-
---====================================================================================================
-
-if @is_repository = 1
-begin
-    if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Running validate_repository'
-
-    if @branch is null
-    begin
-        set @return = -1
-        raiserror('@branch is required when @is_repository = 1.', 16, 1)
-        return @return
-    end
-
-    -- Validate repository
-    exec @return = master.dbo.validate_repository
-         @repository_path = @folder_path
-        ,@branch = @branch
-        ,@debug = @debug
-
-    if @return <> 0 return @return -- The previous call will throw an error so don't bother throwing another.
-end
-
-if @return <> 0 return @return -- The previous call will throw an error so don't bother throwing another.
 
 --====================================================================================================
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Running validate_path'
 
--- Add \database\ to the end of @path if it doesn't exist
--- BUG: This will fail if @path looks like this: C:\Users\gduffie\DATABASE\GitHub\fmc-schedulewise
-if patindex('%\database%', @folder_path) = 0 set @database_folder_path = dbo.directory_slash(null, @folder_path, '\') + 'database\'
+set @database_folder_path = dbo.directory_slash(null, @folder_path, '\')
 
 -- Validate path to the database folder in the repository
 exec @return = master.dbo.validate_path
@@ -130,7 +106,12 @@ insert @files ([file_path])
 
 delete @files where [file_path] is null
 
+-- How many files do we have?
+select @rowcount = count(*) from @files
+
 if @debug >= 6 select '@files before' as [@files before], * from @files
+
+if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Found ' + ltrim(str(@rowcount)) + ' files.'
 
 if exists (select 1 from @files where [file_path] = N'The system cannot find the file specified.')
 begin
@@ -157,42 +138,24 @@ end
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Removing unnecessary paths'
 
--- Remove Build
-delete @files where [file_path] like '%database\Build%'
+-- TODO: Assumes that you have at least two slashes (i.e., C:\repository-path\folder)
+insert @exclusions (exclude) select distinct '%\%\' + Item + '%' from dbo.udf_split_8k_string_single_delimiter(@folder_exclusions, ',') where Item is not null
 
--- Remove Bootstrap
-delete @files where [file_path] like '%database\Bootstrap%'
+-- Ideally you would include the extension
+insert @exclusions (exclude) select distinct '%\' + Item from dbo.udf_split_8k_string_single_delimiter(@file_exclusions, ',') where Item is not null
 
--- Remove Roles (for now)
-delete @files where [file_path] like '%database\Roles%'
+delete f from @files f join @exclusions e on f.file_path like e.exclude
 
--- Remove Scripts
-delete @files where [file_path] like '%database\Scripts%'
+set @rowcount = @@rowcount
 
--- Remove Tests
-delete @files where [file_path] like '%database\Tests%'
-
--- Remove Users
-delete @files where [file_path] like '%database\Users%'
-
--- Remove ZipCodeLookup Static Data (for now)
-delete @files where [file_path] like '%database\Static Data\dbo.ZipCodeLookup%'
-
--- Remove JSONHierarchy Table and associated function (for now)
-delete @files where [file_path] like '%database\Tables\JSONHierarchy%'
-delete @files where [file_path] like '%database\Functions\dbo.udf_ToJSON%'
-
--- Remove these views (for now) because they can't be "altered" since they rely on each other. Maybe views should be dropped and recreated instead of altered. Why does it work on SQL 2017 but not on 2012?
-delete @files where [file_path] like '%database\Views\dbo.vwScheduleStartTime%'
-delete @files where [file_path] like '%database\Views\dbo.vwScheduleEndTime%'
-delete @files where [file_path] like '%database\Views\dbo.vwSchedule%'
+if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Removed ' + ltrim(str(@rowcount)) + ' files'
 
 -- What do we have left?
 select @rowcount = count(*) from @files
 
 if @debug >= 5 select '@files after' as [@files after], * from @files
 
-if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Found ' + ltrim(str(@rowcount)) + ' files.'
+if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] ' + ltrim(str(@rowcount)) + ' files remain after removing exclusions'
 
 --====================================================================================================
 
@@ -208,29 +171,29 @@ begin
 
     --set xact_abort on
     -- TODO: Change this to use the repo path + '\Tables\TableOrder.csv'
-    --bulk insert #TableOrder from 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\database\Tables\TableOrder.csv' with (datafiletype = 'char', firstrow = 2, tablock, format = 'csv')
+    --bulk insert #TableOrder from 'C:\Users\username\Documents\GitHub\repository-name\database\Tables\TableOrder.csv' with (datafiletype = 'char', firstrow = 2, tablock, format = 'csv')
     --set xact_abort off
 
     --if @debug >= 4 select '#TableOrder' as [#TableOrder], * from #TableOrder
 
     -- Set the order
     -- TODO: Add Jobs, Roles, Users
-    --update f set sortby = (10 * o.dependency_level), module_type = 'u' from @files f join #TableOrder o on f.module_name = o.[name] where f.[file_path] like '%database\Tables%'
-    update @files set sortby = 200, module_type = 'sc' where [file_path] like '%database\Static Data%'
-    --update @files set sortby = 300, module_type = 'fk' where [file_path] like '%database\Foreign Keys%'
-    update @files set sortby = 400, module_type = 'sc' where [file_path] like '%database\Revisions%'
-    update @files set sortby = 500, module_type = 'fn' where [file_path] like '%database\Functions%'
-    update @files set sortby = 600, module_type = 'v' where [file_path] like '%database\Views%'
-    update @files set sortby = 700, module_type = 'p' where [file_path] like '%database\Stored Procedures%'
-    update @files set sortby = 900, module_type = 'sc' where [file_path] like '%database\Triggers%'
-    update @files set sortby = 800, module_type = 'sc' where [file_path] like '%database\Post Processing%'
+    --update f set sortby = (10 * o.dependency_level), module_type = 'u' from @files f join #TableOrder o on f.module_name = o.[name] where f.[file_path] like '%\Tables%'
+    update @files set sortby = 200, module_type = 'sc' where [file_path] like '%\%\Static Data%'
+    --update @files set sortby = 300, module_type = 'fk' where [file_path] like '%\Foreign Keys%'
+    update @files set sortby = 400, module_type = 'sc' where [file_path] like '%\%\Revisions%'
+    update @files set sortby = 500, module_type = 'fn' where [file_path] like '%\%\Functions%'
+    update @files set sortby = 600, module_type = 'v' where [file_path] like '%\%\Views%'
+    update @files set sortby = 700, module_type = 'p' where [file_path] like '%\%\Stored Procedures%'
+    update @files set sortby = 900, module_type = 'sc' where [file_path] like '%\%\Triggers%'
+    update @files set sortby = 800, module_type = 'sc' where [file_path] like '%\%\Post Processing%'
 
     delete @files where sortby is null
 
     -- What do we have left now?
     select @rowcount = count(*) from @files
 
-    if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Installing ' + ltrim(str(@rowcount)) + ' files.'
+    if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Installing ' + ltrim(str(@rowcount)) + ' files'
 
     if @debug >= 5 select '@files after sortby' as [@files after sortby], * from @files order by sortby
 
@@ -278,7 +241,6 @@ begin
             ,@file_content = @file_content output
             ,@debug = @debug
 
-        --if @return <> 0 return @return -- The previous call will throw an error so don't bother throwing another.
         if @return <> 0
         begin
             raiserror('Failed to clean file [%s].', 16, 1, @file_name)
@@ -412,18 +374,18 @@ drop PROCEDURE dbo.validate_repository
 
 /*
 
-use ScheduleWise
+use Sandbox
 
---select 'ScheduleWise.sys.procedures before' as 'ScheduleWise.sys.procedures before', * from ScheduleWise.sys.procedures
+--select 'Sandbox.sys.procedures before' as 'Sandbox.sys.procedures before', * from Sandbox.sys.procedures
 --select 'master.sys.procedures before', * from master.sys.procedures
 
 declare @return int
 
 exec @return = master.dbo.upgrade_database
-     @database_name = N'ScheduleWise'
-    ,@folder_path = N'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database'
-    --,@is_repository = 1
-    --,@branch = 'development'
+     @database_name = N'Sandbox'
+    ,@folder_path = N'C:\Users\username\Documents\GitHub\repository-name\folder'
+    ,@folder_exclusions = 'Build,Bootstrap,Jobs,Roles,Scripts,Tests,Users'
+    ,@file_exclusions = 'dbo.ZipCodeLookup.sql,dbo.JSONHierarchy.sql,dbo.udf_ToJSON.sql,dbo.vwScheduleStartTime.sql,dbo.vwScheduleEndTime.sql,dbo.vwSchedule.sql'
     ,@debug = 1
 
 select @return as retval
@@ -431,13 +393,13 @@ select @return as retval
 -- declare @return int
 
 exec @return = master.dbo.install_tsqlt_tests
-     @database_name = 'ScheduleWise'
-    ,@folder_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database'
+     @database_name = 'Sandbox'
+    ,@folder_path = 'C:\Users\username\Documents\GitHub\repository-name'
     ,@debug = 1
 
 select @return as retval
 
---select 'ScheduleWise.sys.procedures after' as 'ScheduleWise.sys.procedures after', * from ScheduleWise.sys.procedures order by modify_date
+--select 'Sandbox.sys.procedures after' as 'Sandbox.sys.procedures after', * from Sandbox.sys.procedures order by modify_date
 --select 'master.sys.procedures after', * from master.sys.procedures
 
 -- Run all tSQLt tests

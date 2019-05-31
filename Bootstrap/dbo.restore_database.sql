@@ -37,7 +37,6 @@ if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_da
 
 declare
      @return int = 0
-    ,@sql nvarchar(max)
     ,@header_sql nvarchar(max)
     ,@filelist_sql nvarchar(max)
     ,@restore_sql nvarchar(max)

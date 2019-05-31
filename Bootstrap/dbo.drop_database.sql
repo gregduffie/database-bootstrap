@@ -11,7 +11,7 @@ go
 
 create procedure dbo.drop_database
 (
-     @database_name nvarchar(128) -- [Required]
+     @database_name nvarchar(128)   -- [Required] Database name without brackets. TODO: Make this work with/without brackets.
     ,@debug tinyint = 0
 )
 with encryption
