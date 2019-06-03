@@ -15,6 +15,7 @@ create procedure dbo.install_tsqlt_tests
     ,@folder_path varchar(260)      -- [Required] Path to the folder containing the Tests (i.e., C:\Users\username\Documents\GitHub\repository-name\database\Tests)
     ,@debug tinyint = 0
 )
+with encryption
 as
 
 /*

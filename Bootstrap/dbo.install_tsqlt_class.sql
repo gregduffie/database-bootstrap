@@ -15,6 +15,7 @@ create procedure dbo.install_tsqlt_class
     ,@file_path varchar(260)            -- [Required] Full path to the tSQLt.class.sql file
     ,@debug tinyint = 0
 )
+with encryption
 as
 
 /*
