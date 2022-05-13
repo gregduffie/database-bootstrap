@@ -12,6 +12,7 @@ go
 create procedure dbo.validate_database
 (
      @database_name varchar(128)    -- TODO: Handle database name with/without brackets
+    ,@allow_system bit = 0          -- Allows installation on master for things like Ola H.'s tools, Brent Ozar's Blitz tools, etc.
     ,@debug tinyint = 0
 )
 with encryption
@@ -43,7 +44,7 @@ begin
 end
 
 -- Fail if you try to install on a system database
-if exists (select 1 from sys.databases where name = @database_name and database_id <= 4)
+if exists (select 1 from sys.databases where name = @database_name and database_id <= 4) and @allow_system = 0
 begin
     set @return = -1
     raiserror('You can not install on [%s].', 16, 1, @database_name)
@@ -70,6 +71,14 @@ declare @return int
 
 exec @return = master.dbo.validate_database
      @database_name = 'master'
+    ,@allow_system = 0
+    ,@debug = 1
+
+select @return
+
+exec @return = master.dbo.validate_database
+     @database_name = 'master'
+    ,@allow_system = 1
     ,@debug = 1
 
 select @return

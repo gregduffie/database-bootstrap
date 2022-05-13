@@ -54,6 +54,9 @@ begin
     return @return
 end
 
+-- Treat table files as scripts because if the table is missing it will get recreated from scratch instead of having to go through all of the Revisions script changes.
+if @module_type = 'u' set @module_type = 'sc'
+
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [clean_file] @module_type: ' + isnull(@module_type, '{null}')
 
 select
@@ -67,12 +70,13 @@ set @len = len(@file_content)
 
 if @debug >= 2 print '[' + convert(varchar(23), getdate(), 121) + '] [clean_file] @len before replace: ' + isnull(ltrim(str(@len)), '{null}')
 
--- Normalize procedures. They are the only type that have two difference ways to call it (proc vs procedure).
+-- Normalize procedures because they are the only type that have two different ways to call them (proc vs procedure). Notice the space after "proc".
 if @module_type = 'p'
 begin
     select
-         @file_content = replace(@file_content, 'create proc ', 'create procedure')
-        ,@file_content = replace(@file_content, 'alter proc ', 'alter procedure')
+         @file_content = replace(@file_content, 'create or alter proc ', 'create or alter procedure ')
+        ,@file_content = replace(@file_content, 'create proc ', 'create procedure ')
+        ,@file_content = replace(@file_content, 'alter proc ', 'alter procedure ')
 end
 
 select
@@ -105,7 +109,7 @@ set @len = len(@file_content)
 
 if @debug >= 2 print '[' + convert(varchar(23), getdate(), 121) + '] [clean_file] @len after replace: ' + isnull(ltrim(str(@len)), '{null}')
 
-if @module_type <> 'sc' -- SC = Script (Revisions, Post Processing, etc.)
+if @module_type <> 'sc' -- SC = Script (Revisions, Post Processing, Tables, etc.)
 begin
     -- Find the position of the module marker
     select @pos = pos
@@ -114,6 +118,7 @@ begin
         from (
             select convert(char(2), 'p') as module_type, 'create procedure' as module_definition
             union select 'p', 'alter procedure'
+            union select 'p', 'create or alter procedure'
             union select 'fn', 'create function'
             union select 'fn', 'alter function'
             union select 'tr', 'create trigger'
@@ -251,8 +256,8 @@ declare
     ,@file_content nvarchar(max)
     ,@debug tinyint
 
---set @file_path = 'C:\Users\username\Documents\GitHub\repository-name\database\Post Processing\0100 Rollover SP_Log Table.sql'
-set @file_path = 'C:\Users\username\Documents\GitHub\repository-name\database\Revisions\Revisions_2.x.x.sql'
+--set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\fmcsw\Post Processing\0100 Rollover SP_Log Table.sql'
+set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\FMCSW\Tables\sw.Schedule.sql'
 
 set @debug = 6
 

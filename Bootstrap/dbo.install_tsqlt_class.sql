@@ -166,17 +166,17 @@ go
 
 /*
 
-use Sandbox
+use FMCSW_LOCAL
 go
 
 exec master.dbo.install_tsqlt_tests
-     @database_name = 'Sandbox'
-    ,@folder_path = 'C:\Users\username\Documents\GitHub\repository-name\database\Tests'
+     @database_name = 'FMCSW_LOCAL'
+    ,@folder_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\fmcsw\Tests'
     ,@debug = 6
 
 exec master.dbo.install_tsqlt_class
-     @database_name = 'Sandbox'
-    ,@file_path = 'C:\Users\username\Documents\GitHub\repository-name\Database\Tests\tSQLt.class.sql'
+     @database_name = 'FMCSW_LOCAL'
+    ,@file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\fmcsw\Tests\tSQLt.class.sql'
     ,@debug = 6
 
 */

@@ -4,15 +4,18 @@ use master
 go
 
 -- To allow advanced options to be changed.
-EXEC sp_configure 'show advanced options', 1
-GO
+exec sp_configure 'show advanced options', 1
+go
+
 -- To update the currently configured value for advanced options.
-RECONFIGURE
-GO
+reconfigure
+go
+
 -- To enable the feature.
-EXEC sp_configure 'xp_cmdshell', 1
-GO
+exec sp_configure 'xp_cmdshell', 1
+go
+
 -- To update the currently configured value for this feature.
-RECONFIGURE
-GO
+reconfigure
+go
 

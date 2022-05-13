@@ -100,7 +100,7 @@ declare
     ,@repository_path nvarchar(2000)
     ,@branch varchar(50)
 
-set @repository_path = 'C:\Users\username\Documents\GitHub\repository-name'
+set @repository_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database'
 set @branch = 'develop'
 
 exec @return = master.dbo.validate_repository

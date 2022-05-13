@@ -88,5 +88,3 @@ Examples:
 
 */
 
-go
-

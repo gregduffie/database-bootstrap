@@ -82,14 +82,14 @@ go
 /* DEV TESTING
 
 exec master.dbo.list_files
-     @folder_path = 'C:\Users\username\Documents\GitHub\repository-name\'
+     @folder_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\'
     ,@include_subfolders = 1
     ,@extension = 'sql'
     ,@debug = 2
 
 -- Not sure when this would ever happen...
 exec master.dbo.list_files
-     @folder_path = 'C:\Users\username\Documents\GitHub\repository-name\database\revisions\Revisions_2.x.x.sql'
+     @folder_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\fmcsw\revisions\Revisions_2.x.x.sql'
     ,@include_subfolders = 1
     ,@extension = 'sql'
     ,@debug = 2

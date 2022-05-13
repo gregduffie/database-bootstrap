@@ -177,17 +177,17 @@ go
 
 /*
 
-use Sandbox
+use FMCSW_LOCAL
 go
 
 exec master.dbo.upgrade_database
-     @database_name = 'Sandbox'
-    ,@folder_path = 'C:\Users\username\Documents\GitHub\repository-name\database\Tests'
+     @database_name = 'FMCSW_LOCAL'
+    ,@folder_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\fmcsw\Tests'
     ,@debug = 1
 
 exec master.dbo.install_tsqlt_tests
-     @database_name = 'Sandbox'
-    ,@folder_path = 'C:\Users\username\Documents\GitHub\repository-name\database'
+     @database_name = 'FMCSW_LOCAL'
+    ,@folder_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\fmcsw\Tests'
     ,@debug = 1
 
 -- Run all tSQLt tests

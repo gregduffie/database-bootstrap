@@ -1,91 +1,124 @@
 use master
 go
 
-/*
+/* IMPORTANT:
 
-IMPORTANT: Make sure you have the correct Git branch checked out before you run this.
-You should really only upgrade your database using the Staging or QA branches. But there's
-nothing stopping you from upgrading using the DEV branch or your feature branch.
-
-You can use the @is_repository flag combined with the @branch flag to make sure you don't accidentally bork
-your database with an unstable branch. It simply checks the hidden Git files to make sure you have the
-correct branch checked out.
-
-If you do mess up your local database just restore it from a backup, check out your desired branch, and run this upgrade.
+Make sure you have the correct Git branch checked out before you run this.
+You should really only upgrade your database using 'master' or 'develop'.
+But there's nothing stopping you from upgrading using a feature branch.
+Just remember that the feature branch may have messed up your data and you might need to restore a clean database backup.
 
 */
 
-/* Restore from multiple backup files
+/* Delete snapshot (optional)
 
 use master
 
-restore database [DEV] from
-disk = N'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Backup\DEV_01.bak',
-disk = N'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Backup\DEV_02.bak',
-disk = N'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Backup\DEV_03.bak',
-disk = N'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Backup\DEV_04.bak',
-disk = N'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Backup\DEV_05.bak',
-disk = N'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Backup\DEV_06.bak',
-disk = N'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Backup\DEV_07.bak',
-disk = N'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Backup\DEV_08.bak',
-disk = N'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Backup\DEV_09.bak',
-disk = N'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Backup\DEV_10.bak',
-disk = N'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Backup\DEV_11.bak',
-disk = N'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Backup\DEV_12.bak',
-disk = N'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Backup\DEV_13.bak',
-disk = N'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Backup\DEV_14.bak',
-disk = N'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Backup\DEV_15.bak',
-disk = N'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Backup\DEV_16.bak',
-disk = N'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Backup\DEV_17.bak',
-disk = N'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Backup\DEV_18.bak',
-disk = N'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Backup\DEV_19.bak',
-disk = N'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Backup\DEV_20.bak' with file = 1,
-move N'FMCSW' to N'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\DATA\DEV.mdf',
-move N'FMCSW_log' to N'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\DATA\DEV_log.ldf',
-nounload,
-replace,
-stats = 5
+drop database [FMCSW_LOCAL_SS_20190524]
 
 */
 
-/* Create snapshot
+/* Create snapshot (optional)
 
 use master
 
-create database [DEV_SS_20180919] on (name = DEV, filename = 'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Data\DEV_SS_20180919.ss') as snapshot of [DEV]
+create database [FMCSW_LOCAL_SS_20190903] on (name = FMCSW, filename = 'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Data\FMCSW_LOCAL_SS_20190903.ss') as snapshot of [FMCSW_LOCAL]
 
 */
 
-/* Restore snapshot
+/* Restore snapshot (optional)
 
 use master
 
-restore database [DEV] from database_snapshot = 'DEV_SS_20180919'
+restore database [FMCSW_LOCAL] from database_snapshot = 'FMCSW_LOCAL_SS_20190903'
 
 */
 
-/* Delete snapshot
+/* DROP ALL SW TABLES AND VIEWS
 
-use master
-
-drop database [DEV_SS_20180919]
-
-*/
-
-
-use master
+use FMCSW_LOCAL
 go
 
-restore database [DEV] from database_snapshot = 'DEV_SS_20180919'
+set nocount on
+
+declare @schema_name sysname, @table_name sysname, @view_name sysname, @base nvarchar(4000), @sql nvarchar(4000)
+
+declare @tables table ([schema_name] sysname not null, table_name sysname not null)
+
+declare @views table ([schema_name] sysname not null, view_name sysname not null)
+
+insert @tables ([schema_name], table_name)
+    select schema_name(schema_id) as [schema_name], [name] as table_name
+    from sys.tables
+    where is_ms_shipped = 0
+    and schema_id = schema_id('sw')
+    and temporal_type <> 1
+    order by name
+
+--select * from @tables
+
+insert @views ([schema_name], view_name)
+    select schema_name(schema_id) as [schema_name], [name] as view_name
+    from sys.views
+    where is_ms_shipped = 0
+    and schema_id = schema_id('sw')
+    order by name
+
+--select * from @views
+
+set @base = '
+if object_id(''[<<@schema_name>>].[<<@table_name>>History]'') is not null
+begin
+    if object_id(''[<<@schema_name>>].[<<@table_name>>]'') is not null
+    and exists (select 1 from sys.tables where schema_id = schema_id(''<<@schema_name>>'') and [name] = ''<<@table_name>>'' and temporal_type = 2)
+        alter table [<<@schema_name>>].[<<@table_name>>] set (system_versioning = off)
+
+    if object_id(''[<<@schema_name>>].[<<@table_name>>History]'') is not null
+        drop table [<<@schema_name>>].[<<@table_name>>History]
+end
+
+if object_id(''[<<@schema_name>>].[<<@table_name>>]'') is not null drop table [<<@schema_name>>].[<<@table_name>>]
+'
+
+while exists (select 1 from @tables)
+begin
+    select top (1) @schema_name = [schema_name], @table_name = table_name from @tables order by [schema_name], table_name
+
+    set @sql = replace(@base, '<<@schema_name>>', @schema_name)
+    set @sql = replace(@sql, '<<@table_name>>', @table_name)
+
+    print @sql
+    exec sp_executesql @sql
+
+    delete @tables where table_name = @table_name
+end
+
+set @base = 'if object_id(''[<<@schema_name>>].[<<@view_name>>]'') is not null drop view [<<@schema_name>>].[<<@view_name>>]'
+
+while exists (select 1 from @views)
+begin
+    select top (1) @schema_name = [schema_name], @view_name = view_name from @views order by [schema_name], view_name
+
+    set @sql = replace(@base, '<<@schema_name>>', @schema_name)
+    set @sql = replace(@sql, '<<@view_name>>', @view_name)
+
+    print @sql
+    exec sp_executesql @sql
+
+    delete @views where view_name = @view_name
+end
 go
+
+*/
 
 declare @return int = 0
 
 exec @return = master.dbo.upgrade_database
-     @database_name = 'DEV' -- The name of your local database (e.g. Local, DEV)
-    ,@folder_path = 'C:\Users\username\Documents\GitHub\repository-name\database' -- Path to your database repository
+     @database_name = 'FMCSW_LOCAL' -- The name of your local database (e.g. FMCSW_LOCAL, FMCSW_DEV, ScheduleWise)
+    ,@folder_path = 'C:\GitHub\fmc-schedulewise-database\FMCSW' -- Path to your database repository
+    ,@folder_exclusions = 'Build,Bootstrap,Jobs,Roles,Scripts,Tests,Users'
+    ,@file_exclusions = null
     ,@debug = 1
 
-select @return as ReVal
-
+select @return as [return]
 go

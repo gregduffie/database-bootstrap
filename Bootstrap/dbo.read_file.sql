@@ -89,7 +89,7 @@ declare
     ,@debug tinyint
 
 select
-     @file_path = 'C:\Users\username\Documents\GitHub\repository-name\database\Revisions\Revisions_2.x.x.sql'
+     @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\fmcsw\Revisions\Revisions_2.x.x.sql'
     ,@debug = 4
 
 exec master.dbo.read_file

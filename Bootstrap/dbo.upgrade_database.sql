@@ -15,6 +15,7 @@ create procedure dbo.upgrade_database
     ,@folder_path varchar(260)          -- [Required] Path to the folder to install (i.e., C:\Users\username\Documents\GitHub\repository-name\folder)
     ,@folder_exclusions nvarchar(max)   -- Comma-separated list of folders to exclude (e.g., Build, Roles, Security)
     ,@file_exclusions nvarchar(max)     -- Comma-separated list of files to exclude (e.g., vwSchemaBoundView.sql, SpecialScriptFile.sql)
+    ,@allow_system bit = 0              -- Allows installation on master for things like Ola H.'s tools, Brent Ozar's Blitz tools, etc.
     ,@debug tinyint = 0
 )
 with encryption
@@ -22,7 +23,7 @@ as
 
 /*
 
-This will look at the repository location and install all of the files to upgrade the database
+This will look at the @folder_path and install all of the files to upgrade the database
 
 */
 
@@ -54,8 +55,11 @@ declare
     ,@sql_statement nvarchar(max)
     ,@sql_params nvarchar(100)
     ,@object_exists bit
+    ,@sort_by int
 
---create table #TableOrder ([name] varchar(128) not null, dependency_level tinyint not null)
+create table #TableOrder (SortBy smallint not null, TableName varchar(128) not null)
+
+create table #ViewOrder (SortBy smallint not null, ViewName varchar(128) not null)
 
 declare @files table ([file_path] nvarchar(260) null, [file_name] nvarchar(260) null, module_type char(2) null, module_name varchar(128) null, sortby int null)
 
@@ -74,7 +78,7 @@ exec @return = master.dbo.validate_path
      @path = @database_folder_path
     ,@is_file = 0
     ,@is_directory = 1
-    ,@debug = 1
+    ,@debug = 0
 
 if @return <> 0
 begin
@@ -89,6 +93,7 @@ if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_da
 -- Make sure the database exists, etc.
 exec @return = master.dbo.validate_database
      @database_name = @database_name
+    ,@allow_system = @allow_system
     ,@debug = @debug
 
 if @return <> 0 return @return -- The previous call will throw an error so don't bother throwing another.
@@ -164,29 +169,27 @@ begin
     -- Populate the file_name
     update @files set [file_name] = master.dbo.get_file_name_from_file_path([file_path]) where charindex('\', [file_path]) > 0
 
-    -- Kinda cheating here...
-    update @files set module_name = replace(replace(replace([file_name], 'dbo.', ''), 'tsqlt.', ''), '.sql', '')
-
-    --if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Populate TableOrder'
-
-    --set xact_abort on
-    -- TODO: Change this to use the repo path + '\Tables\TableOrder.csv'
-    --bulk insert #TableOrder from 'C:\Users\username\Documents\GitHub\repository-name\database\Tables\TableOrder.csv' with (datafiletype = 'char', firstrow = 2, tablock, format = 'csv')
-    --set xact_abort off
-
-    --if @debug >= 4 select '#TableOrder' as [#TableOrder], * from #TableOrder
+    -- The only thing we want in the module_name is the schema prefix.
+    update @files set module_name = replace(replace([file_name], 'tsqlt.', ''), '.sql', '')
 
     -- Set the order
-    -- TODO: Add Jobs, Roles, Users
-    --update f set sortby = (10 * o.dependency_level), module_type = 'u' from @files f join #TableOrder o on f.module_name = o.[name] where f.[file_path] like '%\Tables%'
-    update @files set sortby = 200, module_type = 'sc' where [file_path] like '%\%\Static Data%'
-    --update @files set sortby = 300, module_type = 'fk' where [file_path] like '%\Foreign Keys%'
-    update @files set sortby = 400, module_type = 'sc' where [file_path] like '%\%\Revisions%'
-    update @files set sortby = 500, module_type = 'fn' where [file_path] like '%\%\Functions%'
-    update @files set sortby = 600, module_type = 'v' where [file_path] like '%\%\Views%'
-    update @files set sortby = 700, module_type = 'p' where [file_path] like '%\%\Stored Procedures%'
-    update @files set sortby = 900, module_type = 'sc' where [file_path] like '%\%\Triggers%'
-    update @files set sortby = 800, module_type = 'sc' where [file_path] like '%\%\Post Processing%'
+    -- TODO: Add Jobs, Roles, Users, Foreign Keys
+    update @files set sortby = 10, module_type = 'sc' where [file_path] like '%\%\Schema%' and sortby is null
+    update @files set sortby = 20, module_type = 'u' where [file_path] like '%\%\Tables\%TableOrder%' and sortby is null
+    update @files set sortby = 30, module_type = 'u' where [file_path] like '%\%\Tables\%ViewOrder%' and sortby is null
+    update @files set sortby = 40, module_type = 'sc' where [file_path] like '%\%\Static Data\%TableOrder%' and sortby is null
+    update @files set sortby = 50, module_type = 'sc' where [file_path] like '%\%\Static Data\%ViewOrder%' and sortby is null
+    update @files set sortby = 100, module_type = 'u' where [file_path] like '%\%\Tables%' and sortby is null -- We will sort them below
+    update @files set sortby = 1000, module_type = 'sc' where [file_path] like '%\Foreign Keys\%DisableForeignKeys%' and sortby is null
+    update @files set sortby = 2000, module_type = 'sc' where [file_path] like '%\%\Revisions%' and sortby is null
+    update @files set sortby = 3000, module_type = 'sc' where [file_path] like '%\%\Static Data%' and sortby is null
+    update @files set sortby = 3500, module_type = 'sc' where [file_path] like '%\Foreign Keys\%EnableForeignKeys%' and sortby is null
+    update @files set sortby = 4000, module_type = 'fn' where [file_path] like '%\%\Functions%' and sortby is null
+    update @files set sortby = 5000, module_type = 'v' where [file_path] like '%\%\Views%' and sortby is null -- We will sort them below
+    update @files set sortby = 6000, module_type = 'p' where [file_path] like '%\%\Stored Procedures%' and sortby is null
+    update @files set sortby = 7000, module_type = 'sc' where [file_path] like '%\%\Triggers%' and sortby is null
+    update @files set sortby = 8000, module_type = 'sc' where [file_path] like '%\%\Jobs%' and sortby is null
+    update @files set sortby = 9000, module_type = 'sc' where [file_path] like '%\%\Post Processing%' and sortby is null
 
     delete @files where sortby is null
 
@@ -195,12 +198,14 @@ begin
 
     if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Installing ' + ltrim(str(@rowcount)) + ' files'
 
-    if @debug >= 5 select '@files after sortby' as [@files after sortby], * from @files order by sortby
+    if @debug >= 2 select '@files after sortby 1' as [@files after sortby], * from @files order by sortby
 
+    -- First we have to run the files under 1000 to get the schema, TableOrder, and ViewOrder populated
     while exists (select 1 from @files)
     begin
         select top (1)
-             @file_path = [file_path]
+             @sort_by = sortby
+            ,@file_path = [file_path]
             ,@file_name = [file_name]
             ,@module_type = module_type
             ,@module_type_desc = case module_type when 'v' then 'view' when 'fn' then 'function' when 'p' then 'procedure' when 'tr' then 'trigger' else null end
@@ -214,11 +219,75 @@ begin
 
         if @debug >= 3
         begin
+            print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] @sort_by: ' + isnull(nullif(ltrim(str(@sort_by)), ''), '{null}')
             print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] @file_path: ' + isnull(@file_path, '{null}')
             print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] @file_name: ' + isnull(@file_name, '{null}')
             print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] @module_type: ' + isnull(@module_type, '{null}')
             print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] @module_type_desc: ' + isnull(@module_type_desc, '{null}')
             print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] @module_name: ' + isnull(@module_name, '{null}')
+        end
+
+        -- Once the files with sortby <= 100 are loaded we need to update the sortby for Tables and Views
+        if @sort_by = 100
+        and (not exists (select 1 from #TableOrder) and not exists (select 1 from #ViewOrder)) -- Don't keep running this if the tables are already populated
+        begin
+            if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Populating #TableOrder'
+
+            set @sql = N'if object_id(''[<<@database_name>>].dbo.TableOrder'') is not null select SortBy, TableName from [<<@database_name>>].dbo.TableOrder'
+
+            set @sql = replace(@sql, '<<@database_name>>', @database_name)
+
+            if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] @sql: ' + isnull(@sql, '{null}')
+
+            insert #TableOrder (SortBy, TableName) exec sp_executesql @sql
+
+            set @rowcount = @@rowcount
+
+            if @debug >= 2 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] ' + ltrim(str(@rowcount)) + ' row(s) added to #TableOrder'
+
+            if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Populating #ViewOrder'
+
+            set @sql = N'if object_id(''[<<@database_name>>].dbo.ViewOrder'') is not null select SortBy, ViewName from [<<@database_name>>].dbo.ViewOrder'
+
+            set @sql = replace(@sql, '<<@database_name>>', @database_name)
+
+            if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] @sql: ' + isnull(@sql, '{null}')
+
+            insert #ViewOrder (SortBy, ViewName) exec sp_executesql @sql
+
+            set @rowcount = @@rowcount
+
+            if @debug >= 2 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] ' + ltrim(str(@rowcount)) + ' row(s) added to #ViewOrder'
+
+            if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Updating SortBy for Tables and Views'
+
+            update f set sortby = 100 + o.SortBy, module_type = 'u' from @files f join #TableOrder o on f.module_name = o.TableName where f.[file_path] like '%\%\Tables%';
+
+            set @rowcount = @@rowcount
+
+            if @debug >= 2 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] ' + ltrim(str(@rowcount)) + ' row(s) updated in @files from #TableOrder for Tables'
+
+            -- This is not really necessary because we remove all foreign keys to allow the Static Data to be added without worrying about the order.
+            -- But, it should stop people from adding a "z" to the front of the file name in order to get it to load last.
+            update f set sortby = 3000 + o.SortBy, module_type = 'sc' from @files f join #TableOrder o on f.module_name = o.TableName where f.[file_path] like '%\%\Static Data%';
+
+            set @rowcount = @@rowcount
+
+            if @debug >= 2 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] ' + ltrim(str(@rowcount)) + ' row(s) updated in @files from #TableOrder for Static Data'
+
+            update f set sortby = 5000 + o.SortBy, module_type = 'v' from @files f join #ViewOrder o on f.module_name = o.ViewName where f.[file_path] like '%\%\Views%';
+
+            set @rowcount = @@rowcount
+
+            if @debug >= 2 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] ' + ltrim(str(@rowcount)) + ' row(s) updated in @files from #ViewOrder for Views'
+
+            if @debug >= 5
+            begin
+                select '@files after sortby 2' as [@files after sortby], *
+                from @files
+                --where module_name in ('dbo.TAPRatioStates')
+                order by sortby
+            end
         end
 
         if @debug >= 2 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Running read_file on [' + isnull(@file_name, '{null}') + ']'
@@ -250,43 +319,57 @@ begin
         -- TODO: Verify that the name of the file is the same as the name of the proc/function/trigger
         -- TODO: Verify schema
 
-        if @module_type in ('v','fn','p','tr')
+        -- Check to see if the object already exists (for certain module types)
+        if @module_type in ('v','fn','p','tr','u')
         begin
-            select
-                 @sql_params = N'@module_type char(2), @module_name nvarchar(128), @object_exists bit = 0 output'
-                ,@sql = N'if exists (select 1 from [<<@database_name>>].sys.objects where [name] = @module_name) set @object_exists = 1 else set @object_exists = 0'
-                ,@sql = replace(@sql, '<<@database_name>>', @database_name)
-
-            if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] @sql: ' + isnull(@sql, '{null}')
-
-            exec sp_executesql
-                 @sql, @sql_params
-                ,@module_type = @module_type
-                ,@module_name = @module_name
-                ,@object_exists = @object_exists output
-
-            if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] @object_exists: ' + isnull(ltrim(str(@object_exists)), '{null}')
-
-            if @object_exists = 1 and nullif(@module_type_desc, '') is not null
+            -- SQL 2016 SP1 introduced "create or alter {function|procedure|trigger|view}"
+            if @module_type in ('v','fn','p','tr')
             begin
-                if @debug >= 2 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Change CREATE to ALTER'
+                if nullif(@module_type_desc, '') is not null
+                begin
+                    if @debug >= 2 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Change CREATE/ALTER to "create or alter"'
 
-                -- Change CREATE to ALTER
-                set @file_content = replace(@file_content, 'create ' + @module_type_desc, 'alter ' + @module_type_desc)
+                    if @file_content not like 'create or alter %'
+                    begin
+                        set @file_content = replace(@file_content, 'alter ' + @module_type_desc, 'create or alter ' + @module_type_desc)
+                        set @file_content = replace(@file_content, 'create ' + @module_type_desc, 'create or alter ' + @module_type_desc)
+                    end
+
+                    insert @script (ident, sql_statement) values (1, @file_content)
+
+                    set @rowcount = @@rowcount
+                end
             end
-            else
+            else if @module_type in ('u')
             begin
-                if @debug >= 2 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Change ALTER to CREATE'
+                -- TODO: Handle brackets
+                select
+                     @sql_params = N'@object_exists bit = 0 output'
+                    ,@sql = N'if object_id(''[<<@database_name>>].<<@module_name>>'') is not null set @object_exists = 1 else set @object_exists = 0'
+                    ,@sql = replace(@sql, '<<@database_name>>', @database_name)
+                    ,@sql = replace(@sql, '<<@module_name>>', @module_name)
 
-                -- Change ALTER to CREATE
-                set @file_content = replace(@file_content, 'alter ' + @module_type_desc, 'create ' + @module_type_desc)
+                if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] @sql: ' + isnull(@sql, '{null}')
+
+                exec sp_executesql
+                     @sql, @sql_params
+                    ,@object_exists = @object_exists output
+
+                if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] @object_exists: ' + isnull(ltrim(str(@object_exists)), '{null}')
+
+                -- If the table already exists then the Revisons script will fix it if needed. You can't use the Table.sql file to adjust the tables.
+                if @object_exists = 0
+                begin
+                    insert @script (ident, sql_statement)
+                        exec @return = master.dbo.parse_file
+                             @file_content = @file_content
+                            ,@debug = @debug
+
+                    set @rowcount = @@rowcount
+                end
             end
-
-            insert @script (ident, sql_statement) values (1, @file_content)
-
-            set @rowcount = @@rowcount
         end
-        else if @module_type in ('sc', 'u')
+        else if @module_type in ('sc') -- Always run Script files like Schema, Revisions, Post Processing
         begin
             insert @script (ident, sql_statement)
                 exec @return = master.dbo.parse_file
@@ -374,18 +457,18 @@ drop PROCEDURE dbo.validate_repository
 
 /*
 
-use Sandbox
+use FMCSW_LOCAL
 
---select 'Sandbox.sys.procedures before' as 'Sandbox.sys.procedures before', * from Sandbox.sys.procedures
+--select 'FMCSW_LOCAL.sys.procedures before' as 'FMCSW_LOCAL.sys.procedures before', * from FMCSW_LOCAL.sys.procedures
 --select 'master.sys.procedures before', * from master.sys.procedures
 
 declare @return int
 
 exec @return = master.dbo.upgrade_database
-     @database_name = N'Sandbox'
-    ,@folder_path = N'C:\Users\username\Documents\GitHub\repository-name\folder'
+     @database_name = N'FMCSW_LOCAL'
+    ,@folder_path = N'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\fmcsw'
     ,@folder_exclusions = 'Build,Bootstrap,Jobs,Roles,Scripts,Tests,Users'
-    ,@file_exclusions = 'dbo.ZipCodeLookup.sql,dbo.JSONHierarchy.sql,dbo.udf_ToJSON.sql,dbo.vwScheduleStartTime.sql,dbo.vwScheduleEndTime.sql,dbo.vwSchedule.sql'
+    ,@file_exclusions = 'dbo.ZipCodeLookup.sql,dbo.vwScheduleStartTime.sql,dbo.vwScheduleEndTime.sql,dbo.vwSchedule.sql'
     ,@debug = 1
 
 select @return as retval
@@ -393,13 +476,13 @@ select @return as retval
 -- declare @return int
 
 exec @return = master.dbo.install_tsqlt_tests
-     @database_name = 'Sandbox'
-    ,@folder_path = 'C:\Users\username\Documents\GitHub\repository-name'
+     @database_name = 'FMCSW_LOCAL'
+    ,@folder_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database'
     ,@debug = 1
 
 select @return as retval
 
---select 'Sandbox.sys.procedures after' as 'Sandbox.sys.procedures after', * from Sandbox.sys.procedures order by modify_date
+--select 'FMCSW_LOCAL.sys.procedures after' as 'FMCSW_LOCAL.sys.procedures after', * from FMCSW_LOCAL.sys.procedures order by modify_date
 --select 'master.sys.procedures after', * from master.sys.procedures
 
 -- Run all tSQLt tests
