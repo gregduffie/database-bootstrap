@@ -3,15 +3,9 @@
 use master
 go
 
-if object_id('dbo.validate_database') is not null
-begin
-    drop procedure dbo.validate_database
-end
-go
-
-create procedure dbo.validate_database
+create or alter procedure dbo.validate_database
 (
-     @database_name varchar(128)    -- TODO: Handle database name with/without brackets
+     @database_name nvarchar(128)   -- TODO: Handle database name with/without brackets
     ,@allow_system bit = 0          -- Allows installation on master for things like Ola H.'s tools, Brent Ozar's Blitz tools, etc.
     ,@debug tinyint = 0
 )
@@ -36,7 +30,7 @@ declare @return int = 0
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [validate_database] Checking @database_name: ' + isnull(@database_name, '{null}')
 
 -- Validate database
-if nullif(@database_name, '') is null
+if nullif(@database_name, N'') is null
 begin
     set @return = -1
     raiserror('@database_name can not be empty.', 16, 1)
@@ -47,7 +41,7 @@ end
 if exists (select 1 from sys.databases where name = @database_name and database_id <= 4) and @allow_system = 0
 begin
     set @return = -1
-    raiserror('You can not install on [%s].', 16, 1, @database_name)
+    raiserror(N'You can not install on [%s].', 16, 1, @database_name)
     return @return
 end
 
@@ -55,7 +49,7 @@ end
 if not exists (select 1 from sys.databases where is_read_only = 0 and is_in_standby = 0 and [state] = 0 and [name] = @database_name)
 begin
     set @return = -1
-    raiserror('[%s] does not exist or is not online.', 16, 1, @database_name)
+    raiserror(N'[%s] does not exist or is not online.', 16, 1, @database_name)
     return @return
 end
 

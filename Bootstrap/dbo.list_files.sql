@@ -3,17 +3,11 @@
 use master
 go
 
-if object_id('dbo.list_files') is not null
-begin
-    drop procedure dbo.list_files
-end
-go
-
-create procedure dbo.list_files
+create or alter procedure dbo.list_files
 (
-     @folder_path varchar(260)      -- [Required] Path to folder (i.e., C:\Users\username\Documents\GitHub\repository-name\)
+     @folder_path nvarchar(260)      -- [Required] Path to folder (i.e., C:\Users\username\Documents\GitHub\repository-name\)
     ,@include_subfolders bit = 0    -- [Optional] Defaults to exclude subfolders
-    ,@extension varchar(10) = 'sql' -- [Required] No period or slash necessary
+    ,@extension nvarchar(10) = N'sql' -- [Required] No period or slash necessary
     ,@debug tinyint = 0
 )
 with encryption
@@ -40,20 +34,20 @@ if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [list_files
 
 declare
      @xp_cmdshell nvarchar(500)
-    ,@full_extension varchar(12)
+    ,@full_extension nvarchar(12)
 
 -- Make sure there's a backslash on the end of the @folder_path
-set @folder_path = master.dbo.directory_slash(null, @folder_path, '\')
+set @folder_path = master.dbo.directory_slash(null, @folder_path, N'\')
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [list_files] @folder_path: ' + isnull(@folder_path, '{null}')
 
-if nullif(@extension, '') is null
+if nullif(@extension, N'') is null
 begin
-    set @full_extension = '*.*'
+    set @full_extension = N'*.*'
 end
 else
 begin
-    set @full_extension = '*.' + replace(@extension, '.', '') -- TODO: Removes all periods. Need to change it to only remove the leading period.
+    set @full_extension = N'*.' + replace(@extension, N'.', N'') -- TODO: Removes all periods. Need to change it to only remove the leading period.
 end
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [list_files] @full_extension: ' + isnull(@full_extension, '{null}')

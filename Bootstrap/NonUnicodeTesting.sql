@@ -1,0 +1,1 @@
+select 'greg' as foo

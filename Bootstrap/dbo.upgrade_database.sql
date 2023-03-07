@@ -3,16 +3,10 @@
 use master
 go
 
-if object_id('dbo.upgrade_database') is not null
-begin
-    drop procedure dbo.upgrade_database
-end
-go
-
-create procedure dbo.upgrade_database
+create or alter procedure dbo.upgrade_database
 (
      @database_name nvarchar(128)       -- [Required] Database name with or without brackets
-    ,@folder_path varchar(260)          -- [Required] Path to the folder to install (i.e., C:\Users\username\Documents\GitHub\repository-name\folder)
+    ,@folder_path nvarchar(260)         -- [Required] Path to the folder to install (i.e., C:\Users\username\Documents\GitHub\repository-name\folder)
     ,@folder_exclusions nvarchar(max)   -- Comma-separated list of folders to exclude (e.g., Build, Roles, Security)
     ,@file_exclusions nvarchar(max)     -- Comma-separated list of files to exclude (e.g., vwSchemaBoundView.sql, SpecialScriptFile.sql)
     ,@allow_system bit = 0              -- Allows installation on master for things like Ola H.'s tools, Brent Ozar's Blitz tools, etc.
@@ -44,24 +38,24 @@ declare
      @return int = 0
     ,@rowcount int
     ,@ident int
-    ,@database_folder_path varchar(260)
-    ,@file_path varchar(260)
-    ,@file_name varchar(260)
+    ,@database_folder_path nvarchar(260)
+    ,@file_path nvarchar(260)
+    ,@file_name nvarchar(260)
     ,@file_content nvarchar(max)
     ,@module_type char(2)
     ,@module_type_desc nvarchar(60)
-    ,@module_name varchar(128)
+    ,@module_name nvarchar(128)
     ,@sql nvarchar(max)
     ,@sql_statement nvarchar(max)
     ,@sql_params nvarchar(100)
     ,@object_exists bit
     ,@sort_by int
 
-create table #TableOrder (SortBy smallint not null, TableName varchar(128) not null)
+create table #TableOrder (SortBy smallint not null, TableName nvarchar(128) not null)
 
-create table #ViewOrder (SortBy smallint not null, ViewName varchar(128) not null)
+create table #ViewOrder (SortBy smallint not null, ViewName nvarchar(128) not null)
 
-declare @files table ([file_path] nvarchar(260) null, [file_name] nvarchar(260) null, module_type char(2) null, module_name varchar(128) null, sortby int null)
+declare @files table ([file_path] nvarchar(260) null, [file_name] nvarchar(260) null, module_type char(2) null, module_name nvarchar(128) null, sortby int null)
 
 declare @exclusions table (exclude nvarchar(260) not null)
 
@@ -71,7 +65,7 @@ declare @script table (ident int not null, sql_statement nvarchar(max) not null)
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Running validate_path'
 
-set @database_folder_path = dbo.directory_slash(null, @folder_path, '\')
+set @database_folder_path = dbo.directory_slash(null, @folder_path, N'\')
 
 -- Validate path to the database folder in the repository
 exec @return = master.dbo.validate_path
@@ -82,7 +76,7 @@ exec @return = master.dbo.validate_path
 
 if @return <> 0
 begin
-    raiserror('Invalid path [%s].', 16, 1, @database_folder_path)
+    raiserror(N'Invalid path [%s].', 16, 1, @database_folder_path)
     return @return
 end
 
@@ -106,7 +100,7 @@ insert @files ([file_path])
     exec master.dbo.list_files
          @folder_path = @folder_path
         ,@include_subfolders = 1
-        ,@extension = 'sql'
+        ,@extension = N'sql'
         ,@debug = @debug
 
 delete @files where [file_path] is null
@@ -132,7 +126,7 @@ begin
     return @return
 end
 
-if exists (select 1 from @files where [file_path] like 'File Not Found%')
+if exists (select 1 from @files where [file_path] like N'File Not Found%')
 begin
     set @return = -1
     raiserror('File Not Found. Make sure there SQL files in your @path.', 16, 1)
@@ -144,10 +138,10 @@ end
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Removing unnecessary paths'
 
 -- TODO: Assumes that you have at least two slashes (i.e., C:\repository-path\folder)
-insert @exclusions (exclude) select distinct '%\%\' + Item + '%' from dbo.udf_split_8k_string_single_delimiter(@folder_exclusions, ',') where Item is not null
+insert @exclusions (exclude) select distinct N'%\%\' + Item + N'%' from dbo.udf_split_unicode_string_single_delimiter(@folder_exclusions, N',') where Item is not null
 
 -- Ideally you would include the extension
-insert @exclusions (exclude) select distinct '%\' + Item from dbo.udf_split_8k_string_single_delimiter(@file_exclusions, ',') where Item is not null
+insert @exclusions (exclude) select distinct N'%\' + Item from dbo.udf_split_unicode_string_single_delimiter(@file_exclusions, N',') where Item is not null
 
 delete f from @files f join @exclusions e on f.file_path like e.exclude
 
@@ -170,26 +164,27 @@ begin
     update @files set [file_name] = master.dbo.get_file_name_from_file_path([file_path]) where charindex('\', [file_path]) > 0
 
     -- The only thing we want in the module_name is the schema prefix.
-    update @files set module_name = replace(replace([file_name], 'tsqlt.', ''), '.sql', '')
+    update @files set module_name = replace(replace([file_name], N'tsqlt.', N''), N'.sql', N'')
 
     -- Set the order
     -- TODO: Add Jobs, Roles, Users, Foreign Keys
-    update @files set sortby = 10, module_type = 'sc' where [file_path] like '%\%\Schema%' and sortby is null
-    update @files set sortby = 20, module_type = 'u' where [file_path] like '%\%\Tables\%TableOrder%' and sortby is null
-    update @files set sortby = 30, module_type = 'u' where [file_path] like '%\%\Tables\%ViewOrder%' and sortby is null
-    update @files set sortby = 40, module_type = 'sc' where [file_path] like '%\%\Static Data\%TableOrder%' and sortby is null
-    update @files set sortby = 50, module_type = 'sc' where [file_path] like '%\%\Static Data\%ViewOrder%' and sortby is null
-    update @files set sortby = 100, module_type = 'u' where [file_path] like '%\%\Tables%' and sortby is null -- We will sort them below
-    update @files set sortby = 1000, module_type = 'sc' where [file_path] like '%\Foreign Keys\%DisableForeignKeys%' and sortby is null
-    update @files set sortby = 2000, module_type = 'sc' where [file_path] like '%\%\Revisions%' and sortby is null
-    update @files set sortby = 3000, module_type = 'sc' where [file_path] like '%\%\Static Data%' and sortby is null
-    update @files set sortby = 3500, module_type = 'sc' where [file_path] like '%\Foreign Keys\%EnableForeignKeys%' and sortby is null
-    update @files set sortby = 4000, module_type = 'fn' where [file_path] like '%\%\Functions%' and sortby is null
-    update @files set sortby = 5000, module_type = 'v' where [file_path] like '%\%\Views%' and sortby is null -- We will sort them below
-    update @files set sortby = 6000, module_type = 'p' where [file_path] like '%\%\Stored Procedures%' and sortby is null
-    update @files set sortby = 7000, module_type = 'sc' where [file_path] like '%\%\Triggers%' and sortby is null
-    update @files set sortby = 8000, module_type = 'sc' where [file_path] like '%\%\Jobs%' and sortby is null
-    update @files set sortby = 9000, module_type = 'sc' where [file_path] like '%\%\Post Processing%' and sortby is null
+    update @files set sortby = 10, module_type = 'sc' where [file_path] like N'%\%\Schema%' and sortby is null
+    update @files set sortby = 20, module_type = 'u' where [file_path] like N'%\%\Tables\%TableOrder%' and sortby is null
+    update @files set sortby = 30, module_type = 'u' where [file_path] like N'%\%\Tables\%ViewOrder%' and sortby is null
+    update @files set sortby = 40, module_type = 'sc' where [file_path] like N'%\%\Static Data\%TableOrder%' and sortby is null
+    update @files set sortby = 50, module_type = 'sc' where [file_path] like N'%\%\Static Data\%ViewOrder%' and sortby is null
+    update @files set sortby = 100, module_type = 'u' where [file_path] like N'%\%\Tables%' and sortby is null -- We will sort them below
+    update @files set sortby = 1000, module_type = 'sc' where [file_path] like N'%\Foreign Keys\%DisableForeignKeys%' and sortby is null
+    update @files set sortby = 2000, module_type = 'sc' where [file_path] like N'%\%\Revisions%' and sortby is null
+    update @files set sortby = 3000, module_type = 'sc' where [file_path] like N'%\%\Static Data%' and sortby is null
+    update @files set sortby = 3500, module_type = 'sc' where [file_path] like N'%\Foreign Keys\%EnableForeignKeys%' and sortby is null
+    update @files set sortby = 4000, module_type = 'fn' where [file_path] like N'%\%\Functions%' and sortby is null
+    update @files set sortby = 5000, module_type = 'v' where [file_path] like N'%\%\Views%' and sortby is null -- We will sort them below
+    update @files set sortby = 5500, module_type = 'tt' where [file_path] like N'%\%\Types%' and sortby is null -- Do not put the schema in front of the file name or it will not run.
+    update @files set sortby = 6000, module_type = 'p' where [file_path] like N'%\%\Stored Procedures%' and sortby is null
+    update @files set sortby = 7000, module_type = 'sc' where [file_path] like N'%\%\Triggers%' and sortby is null
+    update @files set sortby = 8000, module_type = 'sc' where [file_path] like N'%\%\Jobs%' and sortby is null
+    update @files set sortby = 9000, module_type = 'sc' where [file_path] like N'%\%\Post Processing%' and sortby is null
 
     delete @files where sortby is null
 
@@ -235,7 +230,7 @@ begin
 
             set @sql = N'if object_id(''[<<@database_name>>].dbo.TableOrder'') is not null select SortBy, TableName from [<<@database_name>>].dbo.TableOrder'
 
-            set @sql = replace(@sql, '<<@database_name>>', @database_name)
+            set @sql = replace(@sql, N'<<@database_name>>', @database_name)
 
             if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] @sql: ' + isnull(@sql, '{null}')
 
@@ -249,7 +244,7 @@ begin
 
             set @sql = N'if object_id(''[<<@database_name>>].dbo.ViewOrder'') is not null select SortBy, ViewName from [<<@database_name>>].dbo.ViewOrder'
 
-            set @sql = replace(@sql, '<<@database_name>>', @database_name)
+            set @sql = replace(@sql, N'<<@database_name>>', @database_name)
 
             if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] @sql: ' + isnull(@sql, '{null}')
 
@@ -261,7 +256,7 @@ begin
 
             if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Updating SortBy for Tables and Views'
 
-            update f set sortby = 100 + o.SortBy, module_type = 'u' from @files f join #TableOrder o on f.module_name = o.TableName where f.[file_path] like '%\%\Tables%';
+            update f set sortby = 100 + o.SortBy, module_type = 'u' from @files f join #TableOrder o on f.module_name = o.TableName where f.[file_path] like N'%\%\Tables%';
 
             set @rowcount = @@rowcount
 
@@ -269,13 +264,13 @@ begin
 
             -- This is not really necessary because we remove all foreign keys to allow the Static Data to be added without worrying about the order.
             -- But, it should stop people from adding a "z" to the front of the file name in order to get it to load last.
-            update f set sortby = 3000 + o.SortBy, module_type = 'sc' from @files f join #TableOrder o on f.module_name = o.TableName where f.[file_path] like '%\%\Static Data%';
+            update f set sortby = 3000 + o.SortBy, module_type = 'sc' from @files f join #TableOrder o on f.module_name = o.TableName where f.[file_path] like N'%\%\Static Data%';
 
             set @rowcount = @@rowcount
 
             if @debug >= 2 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] ' + ltrim(str(@rowcount)) + ' row(s) updated in @files from #TableOrder for Static Data'
 
-            update f set sortby = 5000 + o.SortBy, module_type = 'v' from @files f join #ViewOrder o on f.module_name = o.ViewName where f.[file_path] like '%\%\Views%';
+            update f set sortby = 5000 + o.SortBy, module_type = 'v' from @files f join #ViewOrder o on f.module_name = o.ViewName where f.[file_path] like N'%\%\Views%';
 
             set @rowcount = @@rowcount
 
@@ -299,7 +294,7 @@ begin
 
         if @return <> 0
         begin
-            raiserror('Failed to read file [%s].', 16, 1, @file_name)
+            raiserror(N'Failed to read file [%s].', 16, 1, @file_name)
             return @return
         end
 
@@ -312,7 +307,7 @@ begin
 
         if @return <> 0
         begin
-            raiserror('Failed to clean file [%s].', 16, 1, @file_name)
+            raiserror(N'Failed to clean file [%s].', 16, 1, @file_name)
             return @return
         end
 
@@ -320,7 +315,7 @@ begin
         -- TODO: Verify schema
 
         -- Check to see if the object already exists (for certain module types)
-        if @module_type in ('v','fn','p','tr','u')
+        if @module_type in ('v','fn','p','tr','u','tt')
         begin
             -- SQL 2016 SP1 introduced "create or alter {function|procedure|trigger|view}"
             if @module_type in ('v','fn','p','tr')
@@ -329,10 +324,10 @@ begin
                 begin
                     if @debug >= 2 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Change CREATE/ALTER to "create or alter"'
 
-                    if @file_content not like 'create or alter %'
+                    if @file_content not like N'create or alter %'
                     begin
-                        set @file_content = replace(@file_content, 'alter ' + @module_type_desc, 'create or alter ' + @module_type_desc)
-                        set @file_content = replace(@file_content, 'create ' + @module_type_desc, 'create or alter ' + @module_type_desc)
+                        set @file_content = replace(@file_content, N'alter ' + @module_type_desc, N'create or alter ' + @module_type_desc)
+                        set @file_content = replace(@file_content, N'create ' + @module_type_desc, N'create or alter ' + @module_type_desc)
                     end
 
                     insert @script (ident, sql_statement) values (1, @file_content)
@@ -340,14 +335,18 @@ begin
                     set @rowcount = @@rowcount
                 end
             end
-            else if @module_type in ('u')
+            else if @module_type in ('u','tt')
             begin
                 -- TODO: Handle brackets
+                if @module_type = 'u'
+                    set @sql = N'if object_id(''[<<@database_name>>].<<@module_name>>'') is not null set @object_exists = 1 else set @object_exists = 0'
+                else if @module_type = 'tt'
+                    set @sql = N'if exists (select 1 from [<<@database_name>>].sys.table_types where is_user_defined = 1 and name = ''<<@module_name>>'') set @object_exists = 1 else set @object_exists = 0'
+
                 select
                      @sql_params = N'@object_exists bit = 0 output'
-                    ,@sql = N'if object_id(''[<<@database_name>>].<<@module_name>>'') is not null set @object_exists = 1 else set @object_exists = 0'
-                    ,@sql = replace(@sql, '<<@database_name>>', @database_name)
-                    ,@sql = replace(@sql, '<<@module_name>>', @module_name)
+                    ,@sql = replace(@sql, N'<<@database_name>>', @database_name)
+                    ,@sql = replace(@sql, N'<<@module_name>>', @module_name)
 
                 if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] @sql: ' + isnull(@sql, '{null}')
 
@@ -387,7 +386,7 @@ begin
         select
              @sql_params = N'@sql_statement nvarchar(max)'
             ,@sql = N'set quoted_identifier on; exec [<<@database_name>>].sys.sp_executesql @sql_statement;'
-            ,@sql = replace(@sql, '<<@database_name>>', @database_name)
+            ,@sql = replace(@sql, N'<<@database_name>>', @database_name)
 
         set @ident = 1
         while @ident <= @rowcount
@@ -401,7 +400,7 @@ begin
 
             if @return <> 0
             begin
-                raiserror('Failed to install [%s].', 16, 1, @file_name)
+                raiserror(N'Failed to install [%s].', 16, 1, @file_name)
                 return @return
             end
 
@@ -468,7 +467,7 @@ exec @return = master.dbo.upgrade_database
      @database_name = N'FMCSW_LOCAL'
     ,@folder_path = N'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\fmcsw'
     ,@folder_exclusions = 'Build,Bootstrap,Jobs,Roles,Scripts,Tests,Users'
-    ,@file_exclusions = 'dbo.ZipCodeLookup.sql,dbo.vwScheduleStartTime.sql,dbo.vwScheduleEndTime.sql,dbo.vwSchedule.sql'
+    ,@file_exclusions = 'dbo.vwScheduleStartTime.sql,dbo.vwScheduleEndTime.sql,dbo.vwSchedule.sql'
     ,@debug = 1
 
 select @return as retval

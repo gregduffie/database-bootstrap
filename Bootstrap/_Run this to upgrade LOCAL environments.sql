@@ -14,7 +14,7 @@ Just remember that the feature branch may have messed up your data and you might
 
 use master
 
-drop database [FMCSW_LOCAL_SS_20190524]
+drop database [FMCSW_LOCAL_SS_01]
 
 */
 
@@ -22,7 +22,7 @@ drop database [FMCSW_LOCAL_SS_20190524]
 
 use master
 
-create database [FMCSW_LOCAL_SS_20190903] on (name = FMCSW, filename = 'C:\Program Files\Microsoft SQL Server\MSSQL14.SQL2017\MSSQL\Data\FMCSW_LOCAL_SS_20190903.ss') as snapshot of [FMCSW_LOCAL]
+create database [FMCSW_LOCAL_SS_01] on (name = FMCSW, filename = 'C:\Program Files\Microsoft SQL Server\MSSQL15.SQL2019\MSSQL\Data\FMCSW_LOCAL_SS_01.ss') as snapshot of [FMCSW_LOCAL]
 
 */
 
@@ -30,7 +30,7 @@ create database [FMCSW_LOCAL_SS_20190903] on (name = FMCSW, filename = 'C:\Progr
 
 use master
 
-restore database [FMCSW_LOCAL] from database_snapshot = 'FMCSW_LOCAL_SS_20190903'
+restore database [FMCSW_LOCAL] from database_snapshot = 'FMCSW_LOCAL_SS_01'
 
 */
 

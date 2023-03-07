@@ -3,16 +3,10 @@
 use master
 go
 
-if object_id('dbo.install_tsqlt_class') is not null
-begin
-    drop procedure dbo.install_tsqlt_class
-end
-go
-
-create procedure dbo.install_tsqlt_class
+create or alter procedure dbo.install_tsqlt_class
 (
      @database_name nvarchar(128)       -- [Required] The database where you want to install the tSQLt class
-    ,@file_path varchar(260)            -- [Required] Full path to the tSQLt.class.sql file
+    ,@file_path nvarchar(260)            -- [Required] Full path to the tSQLt.class.sql file
     ,@debug tinyint = 0
 )
 with encryption
@@ -54,7 +48,7 @@ exec @return = master.dbo.validate_path
 
 if @is_file = 0
 begin
-    raiserror('Invalid path [%s].', 16, 1, @file_path)
+    raiserror(N'Invalid path [%s].', 16, 1, @file_path)
     return @return
 end
 
@@ -77,7 +71,7 @@ if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [install_ts
 
 select
      @sql = N'alter authorization on database::[<<@database_name>>] to sa;'
-    ,@sql = replace(@sql, '<<@database_name>>', @database_name)
+    ,@sql = replace(@sql, N'<<@database_name>>', @database_name)
 
 if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [install_tsqlt_class] @sql: ' + isnull(@sql, '{null}')
 
@@ -91,7 +85,7 @@ if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [install_ts
 
 select
      @sql = N'alter database [<<@database_name>>] set trustworthy on;'
-    ,@sql = replace(@sql, '<<@database_name>>', @database_name)
+    ,@sql = replace(@sql, N'<<@database_name>>', @database_name)
 
 if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [install_tsqlt_class] @sql: ' + isnull(@sql, '{null}')
 
@@ -106,7 +100,7 @@ if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [install_ts
 select
      @sql_params = N'@tsqlt_version_installed varchar(14) output'
     ,@sql = N'if exists (select 1 from [<<@database_name>>].sys.schemas where name = ''tSQLt'') select @tsqlt_version_installed = [Version] from [<<@database_name>>].tSQLt.Info() else set @tsqlt_version_installed = 0'
-    ,@sql = replace(@sql, '<<@database_name>>', @database_name)
+    ,@sql = replace(@sql, N'<<@database_name>>', @database_name)
 
 if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [install_tsqlt_class] @sql: ' + isnull(@sql, '{null}')
 
@@ -143,10 +137,10 @@ begin
     -- TODO: Change this to use the list_files, read_file, clean_file, parse_file logic so that you can count the number of GOs and make sure that all of the test classes and individual tests got installed.
     select
          -- If you add the -b switch (sqlcmd -b -E...) it will fail as soon as it runs into an error
-         @xp_cmdshell = 'sqlcmd -E -S "<<@server_name>>" -d "<<@database_name>>" -I -i "<<@file_path>>"'
-        ,@xp_cmdshell = replace(@xp_cmdshell, '<<@server_name>>', @server_name)
-        ,@xp_cmdshell = replace(@xp_cmdshell, '<<@database_name>>', @database_name)
-        ,@xp_cmdshell = replace(@xp_cmdshell, '<<@file_path>>', @file_path)
+         @xp_cmdshell = N'sqlcmd -E -S "<<@server_name>>" -d "<<@database_name>>" -I -i "<<@file_path>>"'
+        ,@xp_cmdshell = replace(@xp_cmdshell, N'<<@server_name>>', @server_name)
+        ,@xp_cmdshell = replace(@xp_cmdshell, N'<<@database_name>>', @database_name)
+        ,@xp_cmdshell = replace(@xp_cmdshell, N'<<@file_path>>', @file_path)
 
     if @debug >= 2 print '[' + convert(varchar(23), getdate(), 121) + '] [install_tsqlt_class] @xp_cmdshell: ' + isnull(@xp_cmdshell, '{null}')
 

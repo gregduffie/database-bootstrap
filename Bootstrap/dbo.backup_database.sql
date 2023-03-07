@@ -3,13 +3,7 @@
 use master
 go
 
-if object_id('dbo.backup_database') is not null
-begin
-    drop procedure dbo.backup_database
-end
-go
-
-create procedure dbo.backup_database
+create or alter procedure dbo.backup_database
 (
      @database_name nvarchar(128)       -- [Required] Actual database name that you are backing up (e.g., Database).
     ,@full_path nvarchar(4000)  = null  -- [Optional] The full path to the .bak file (e.g., D:\SQL\Backups\Database.bak). If not supplied we will use the default.
@@ -47,7 +41,7 @@ declare
 if not exists (select 1 from sys.databases where name = @database_name)
 begin
     set @return = -1
-    raiserror('Database [%s] does not exist on this server.', 16, 1, @database_name)
+    raiserror(N'Database [%s] does not exist on this server.', 16, 1, @database_name)
     return @return
 end
 
@@ -65,7 +59,7 @@ select
         select @db_version = ltrim(rtrim(thevalue)) from dbo.ApplicationVariables where thelabel = ''DatabaseVersion'';
     end
     '
-    ,@sql = replace(@sql, '<<@database_name>>', @database_name)
+    ,@sql = replace(@sql, N'<<@database_name>>', @database_name)
 
 if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [backup_database] @sql: ' + isnull(@sql, '{null}')
 
@@ -87,13 +81,13 @@ end
 select
      @name = case when datalength(@name) > 0 then @name + N' - ' else N'' end
     ,@name = @name + N'App (<<@app_version>>); DB (<<@db_version>>)'
-    ,@name = replace(@name, '<<@app_version>>', @app_version)
-    ,@name = replace(@name, '<<@db_version>>', @db_version)
+    ,@name = replace(@name, N'<<@app_version>>', @app_version)
+    ,@name = replace(@name, N'<<@db_version>>', @db_version)
 
     ,@description = case when datalength(@description) > 0 then @description + N' - ' else N'' end
     ,@description = @description + N'Date (<<@date>>); Server (<<@server>>)'
-    ,@description = replace(@description, '<<@date>>', convert(varchar(23), getdate(), 121))
-    ,@description = replace(@description, '<<@server>>', @@servername)
+    ,@description = replace(@description, N'<<@date>>', convert(varchar(23), getdate(), 121))
+    ,@description = replace(@description, N'<<@server>>', @@servername)
 
 if @debug >= 2
 begin
@@ -105,7 +99,7 @@ end
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [backup_database] Validating backup path'
 
-if nullif(@full_path, '') is null -- The .bak name wasn't supplied either
+if nullif(@full_path, N'') is null -- The .bak name wasn't supplied either
 begin
     if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [backup_database] @full_path was empty. Checking registry for default location.'
 
@@ -117,7 +111,7 @@ end
 else
 begin
     -- Remove the database name and extension (since they won't exist on the first backup) and just validate the directory. If @full_path wasn't supplied then this step isn't necessary.
-    set @directory = substring(@full_path, 1, len(@full_path) - charindex('\', reverse(@full_path)))
+    set @directory = substring(@full_path, 1, len(@full_path) - charindex(N'\', reverse(@full_path)))
 end
 
 exec @return = master.dbo.rp_validate_path
@@ -131,12 +125,12 @@ if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [backup_dat
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [backup_database] Backing up database [' + @database_name + ']'
 
 select
-     @sql = 'BACKUP DATABASE [<<@database_name>>] TO DISK = N''<<@full_path>>'' WITH DESCRIPTION = N''<<@description>>'', NOFORMAT, <<@init_noinit>>,  NAME = N''<<@name>>'', SKIP, NOREWIND, NOUNLOAD, STATS = 10'
-    ,@sql = replace(@sql, '<<@database_name>>', @database_name)
-    ,@sql = replace(@sql, '<<@full_path>>', @full_path)
-    ,@sql = replace(@sql, '<<@description>>', @description)
-    ,@sql = replace(@sql, '<<@init_noinit>>', case @overwrite when 1 then 'INIT' else 'NOINIT' end)
-    ,@sql = replace(@sql, '<<@name>>', @name)
+     @sql = N'BACKUP DATABASE [<<@database_name>>] TO DISK = N''<<@full_path>>'' WITH DESCRIPTION = N''<<@description>>'', NOFORMAT, <<@init_noinit>>,  NAME = N''<<@name>>'', SKIP, NOREWIND, NOUNLOAD, STATS = 10'
+    ,@sql = replace(@sql, N'<<@database_name>>', @database_name)
+    ,@sql = replace(@sql, N'<<@full_path>>', @full_path)
+    ,@sql = replace(@sql, N'<<@description>>', @description)
+    ,@sql = replace(@sql, N'<<@init_noinit>>', case @overwrite when 1 then N'INIT' else N'NOINIT' end)
+    ,@sql = replace(@sql, N'<<@name>>', @name)
 
 if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [backup_database] @sql: ' + isnull(@sql, '{null}')
 

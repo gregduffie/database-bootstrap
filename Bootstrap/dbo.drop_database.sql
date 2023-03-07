@@ -3,13 +3,7 @@
 use master
 go
 
-if object_id('dbo.drop_database') is not null
-begin
-    drop procedure dbo.drop_database
-end
-go
-
-create procedure dbo.drop_database
+create or alter procedure dbo.drop_database
 (
      @database_name nvarchar(128)   -- [Required] Database name without brackets. TODO: Make this work with/without brackets.
     ,@debug tinyint = 0
@@ -38,7 +32,7 @@ if exists (select 1 from sys.databases where name = @database_name)
 begin
     if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [drop_database] Setting SINGLE_USER mode on database [' + @database_name + ']'
 
-    set @sql = 'ALTER DATABASE [' + @database_name + '] SET SINGLE_USER WITH ROLLBACK IMMEDIATE'
+    set @sql = N'ALTER DATABASE [' + @database_name + N'] SET SINGLE_USER WITH ROLLBACK IMMEDIATE'
 
     if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [drop_database] @sql: ' + isnull(@sql, '{null}')
 
@@ -53,7 +47,7 @@ begin
 
     if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [drop_database] Dropping database [' + @database_name + ']'
 
-    set @sql = 'DROP DATABASE [' + @database_name + ']'
+    set @sql = N'DROP DATABASE [' + @database_name + N']'
 
     if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [drop_database] @sql: ' + isnull(@sql, '{null}')
 
@@ -61,7 +55,7 @@ begin
         exec @return = sp_executesql @sql
     end try
     begin catch
-        set @sql = 'ALTER DATABASE [' + @database_name + '] SET MULTI_USER'
+        set @sql = N'ALTER DATABASE [' + @database_name + N'] SET MULTI_USER'
 
         exec @return = sp_executesql @sql
 

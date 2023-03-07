@@ -3,15 +3,9 @@
 use master
 go
 
-if object_id('dbo.create_database') is not null
-begin
-    drop procedure dbo.create_database
-end
-go
-
-create procedure dbo.create_database
+create or alter procedure dbo.create_database
 (
-     @path varchar(260) -- Path to repository folder (i.e., C:\Users\username\Documents\GitHub\repository-name\) or the whatever you want to install folder (i.e., C:\Users\username\Documents\GitHub\repository-name\database\Bootstrap)
+     @path nvarchar(260) -- Path to repository folder (i.e., C:\Users\username\Documents\GitHub\repository-name\) or the whatever you want to install folder (i.e., C:\Users\username\Documents\GitHub\repository-name\database\Bootstrap)
     ,@database_name nvarchar(128)
     ,@debug tinyint = 0
 )

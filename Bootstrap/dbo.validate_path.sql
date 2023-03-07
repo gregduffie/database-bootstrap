@@ -3,15 +3,9 @@
 use master
 go
 
-if object_id('dbo.validate_path') is not null
-begin
-    drop procedure dbo.validate_path
-end
-go
-
-create procedure dbo.validate_path
+create or alter procedure dbo.validate_path
 (
-     @path varchar(260)                     -- [Required] A folder/directory or full file path including the file name and extension.
+     @path nvarchar(260)                    -- [Required] A folder/directory or full file path including the file name and extension.
     ,@is_file bit = null output             -- [Optional] Returns 1 if @path points to a file. If you pass a value into @is_file then it will throw an error if the @path is not what you expect.
     ,@is_directory bit = null output        -- [Optional] Returns 1 if @path points to a directory. If you pass a value into @is_directory then it will throw an error if the @path is not what you expect.
     ,@debug tinyint = 0
@@ -60,7 +54,7 @@ declare
 
 declare @output table (file_exists bit not null default (0), directory_exists bit not null default (0), parent_directory_exists bit not null default (0))
 
-if nullif(@path, '') is null
+if nullif(@path, N'') is null
 begin
     select @return = -1, @is_file = 0, @is_directory = 0
     raiserror('@path can not be empty', 16, 1)

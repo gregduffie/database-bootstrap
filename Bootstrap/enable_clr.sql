@@ -3,7 +3,7 @@
 use master
 go
 
-exec sp_configure 'clr enabled', 1
+exec sys.sp_configure @configname = 'clr enabled', @configvalue = 1
 go
 
 reconfigure
@@ -11,7 +11,7 @@ go
 
 if convert(int, serverproperty('ProductMajorVersion')) >= 14
 begin
-    exec sp_configure 'clr strict security', 0
+    exec sys.sp_configure @configname = 'clr strict security', @configvalue = 0
 
     reconfigure
 end

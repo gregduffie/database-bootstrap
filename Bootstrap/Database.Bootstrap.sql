@@ -4,7 +4,7 @@ use master
 go
 
 -- To allow advanced options to be changed.
-exec sp_configure 'show advanced options', 1
+exec sys.sp_configure @configname = 'show advanced options', @configvalue = 1
 go
 
 -- To update the currently configured value for advanced options.
@@ -12,7 +12,7 @@ reconfigure
 go
 
 -- To enable the feature.
-exec sp_configure 'xp_cmdshell', 1
+exec sys.sp_configure @configname = 'xp_cmdshell', @configvalue = 1
 go
 
 -- To update the currently configured value for this feature.
@@ -24,7 +24,7 @@ go
 use master
 go
 
-exec sp_configure 'clr enabled', 1
+exec sys.sp_configure @configname = 'clr enabled', @configvalue = 1
 go
 
 reconfigure
@@ -32,7 +32,7 @@ go
 
 if convert(int, serverproperty('ProductMajorVersion')) >= 14
 begin
-    exec sp_configure 'clr strict security', 0
+    exec sys.sp_configure @configname = 'clr strict security', @configvalue = 0
 
     reconfigure
 end
@@ -43,18 +43,13 @@ go
 use master
 go
 
-if object_id('dbo.udf_split_8k_string_single_delimiter') is not null
-begin
-    drop function dbo.udf_split_8k_string_single_delimiter
-end
-go
-
-create function dbo.udf_split_8k_string_single_delimiter
+create or alter function dbo.udf_split_8k_string_single_delimiter
 (
      @string varchar(8000)
     ,@delimiter char(1) = ','
 )
 --WARNING!!! DO NOT USE MAX DATA-TYPES HERE! IT WILL KILL PERFORMANCE!
+--WARNING!!! DO NOT CHANGE @STRING TO NVARCHAR. USE STRING_SPLIT INSTEAD.
 --This method produces zero reads compared to rs_fn_splitNVARCHAR
 returns table with schemabinding as
 return
@@ -115,35 +110,29 @@ select * from dbo.udf_split_8k_string_single_delimiter(@string, @delimiter)
 use master
 go
 
-if exists (select 1 from information_schema.routines where routine_name = 'directory_slash' and routine_schema = 'dbo')
-begin
-    drop function dbo.directory_slash
-end
-go
-
-create function dbo.directory_slash
+create or alter function dbo.directory_slash
 (
-     @beginning_slash varchar(3)
-    ,@directory varchar(260)
-    ,@ending_slash varchar(3)
+     @beginning_slash nvarchar(3)
+    ,@directory nvarchar(260)
+    ,@ending_slash nvarchar(3)
 )
 returns varchar(260)
 with encryption
 as
 begin
     select
-         @beginning_slash = isnull(@beginning_slash, '')
-        ,@directory = isnull(@directory, '')
-        ,@ending_slash = isnull(@ending_slash, '')
+         @beginning_slash = isnull(@beginning_slash, N'')
+        ,@directory = isnull(@directory, N'')
+        ,@ending_slash = isnull(@ending_slash, N'')
 
     --remove all slashes from beginning
-    while left(@directory, 1) in ('\', '/')
+    while left(@directory, 1) in (N'\', N'/')
     begin
         set @directory = right(@directory, len(@directory) - 1)
     end
 
     --remove all slashes from end
-    while right(@directory, 1) in ('\', '/')
+    while right(@directory, 1) in (N'\', N'/')
     begin
         set @directory = left(@directory, len(@directory) - 1)
     end
@@ -205,20 +194,14 @@ Examples:
 use master
 go
 
-if exists (select 1 from information_schema.routines where routine_name = 'get_file_name_from_file_path' and routine_schema = 'dbo')
-begin
-    drop function dbo.get_file_name_from_file_path
-end
-go
-
-create function dbo.get_file_name_from_file_path
+create or alter function dbo.get_file_name_from_file_path
 (
      @file_path nvarchar(260)
 )
 returns varchar(260)
 as
 begin
-    return right(@file_path, isnull(nullif(charindex('\', reverse(@file_path)), 0), 1) - 1) -- TODO: I don't like the isnull/nullif...good enough for now.
+    return right(@file_path, isnull(nullif(charindex(N'\', reverse(@file_path)), 0), 1) - 1) -- TODO: I don't like the isnull/nullif...good enough for now.
 end
 go
 
@@ -233,20 +216,14 @@ select master.dbo.get_file_name_from_file_path('foo.sql')
 use master
 go
 
-if exists (select 1 from information_schema.routines where routine_name = 'get_file_extension_from_file_name' and routine_schema = 'dbo')
-begin
-    drop function dbo.get_file_extension_from_file_name
-end
-go
-
-create function dbo.get_file_extension_from_file_name
+create or alter function dbo.get_file_extension_from_file_name
 (
      @file_name nvarchar(260)
 )
 returns varchar(260)
 as
 begin
-    return right(@file_name, isnull(nullif(charindex('.', reverse(@file_name)), 0), 1) - 1) -- TODO: I don't like the isnull/nullif...good enough for now.
+    return right(@file_name, isnull(nullif(charindex(N'.', reverse(@file_name)), 0), 1) - 1) -- TODO: I don't like the isnull/nullif...good enough for now.
 end
 go
 
@@ -262,15 +239,9 @@ select dbo.get_file_extension_from_file_name('foosql')
 use master
 go
 
-if object_id('dbo.validate_path') is not null
-begin
-    drop procedure dbo.validate_path
-end
-go
-
-create procedure dbo.validate_path
+create or alter procedure dbo.validate_path
 (
-     @path varchar(260)                     -- [Required] A folder/directory or full file path including the file name and extension.
+     @path nvarchar(260)                    -- [Required] A folder/directory or full file path including the file name and extension.
     ,@is_file bit = null output             -- [Optional] Returns 1 if @path points to a file. If you pass a value into @is_file then it will throw an error if the @path is not what you expect.
     ,@is_directory bit = null output        -- [Optional] Returns 1 if @path points to a directory. If you pass a value into @is_directory then it will throw an error if the @path is not what you expect.
     ,@debug tinyint = 0
@@ -319,7 +290,7 @@ declare
 
 declare @output table (file_exists bit not null default (0), directory_exists bit not null default (0), parent_directory_exists bit not null default (0))
 
-if nullif(@path, '') is null
+if nullif(@path, N'') is null
 begin
     select @return = -1, @is_file = 0, @is_directory = 0
     raiserror('@path can not be empty', 16, 1)
@@ -479,15 +450,9 @@ end
 use master
 go
 
-if object_id('dbo.read_file') is not null
-begin
-    drop procedure dbo.read_file
-end
-go
-
-create procedure dbo.read_file
+create or alter procedure dbo.read_file
 (
-     @file_path varchar(260)                    -- [Required] Path to file (i.e., C:\Users\username\Documents\GitHub\repository-name\database\Stored Procedures\dbo.GetUsers.sql)
+     @file_path nvarchar(260)                    -- [Required] Path to file (i.e., C:\Users\username\Documents\GitHub\repository-name\database\Stored Procedures\dbo.GetUsers.sql)
     ,@file_content nvarchar(max) = null output  -- [Optional] No need to pass anything.
     ,@debug tinyint = 0
 )
@@ -521,7 +486,7 @@ declare
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [read_file] @file_path: ' + isnull(@file_path, '{null}')
 
-if @file_path not like '%.git\HEAD' -- Bypass if you're checking for the .git HEAD file
+if @file_path not like N'%.git\HEAD' -- Bypass if you're checking for the .git HEAD file
 begin
     if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [read_file] Running validate_path'
 
@@ -535,7 +500,7 @@ begin
 end
 
 set @sql = N'select @bulkcolumn = bulkcolumn from openrowset(bulk ''<<@file_path>>'', codepage = ''raw'', single_blob) o'
-set @sql = replace(@sql, '<<@file_path>>', @file_path)
+set @sql = replace(@sql, N'<<@file_path>>', @file_path)
 set @sql_params = N'@bulkcolumn varbinary(max) output'
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [read_file] @sql: ' + isnull(@sql, '{null}')
@@ -544,7 +509,7 @@ exec sp_executesql @sql, @sql_params, @bulkcolumn = @bulkcolumn output
 
 if @return <> 0
 begin
-    raiserror('There was a problem reading [%s]', 16, 1, @file_path)
+    raiserror(N'There was a problem reading [%s]', 16, 1, @file_path)
     return @return
 end
 
@@ -590,16 +555,10 @@ exec master.dbo.clean_file
 use master
 go
 
-if object_id('dbo.validate_repository') is not null
-begin
-    drop procedure dbo.validate_repository
-end
-go
-
-create procedure dbo.validate_repository
+create or alter procedure dbo.validate_repository
 (
      @repository_path nvarchar(2000)    -- [Required] The full path to the base of the repository (e.g., C:\Users\username\Documents\GitHub\repository-name) where the (hidden) .git folder is located.
-    ,@branch varchar(50) = null         -- [Optional] The branch that you are expecting to be checked out (i.e., "ref: refs/heads/development").
+    ,@branch nvarchar(50) = null         -- [Optional] The branch that you are expecting to be checked out (i.e., "ref: refs/heads/development").
     ,@debug tinyint = 0
 )
 with encryption
@@ -626,12 +585,12 @@ if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [validate_r
 
 declare
      @return int = 0
-    ,@file_path varchar(260)
+    ,@file_path nvarchar(260)
     ,@file_content nvarchar(max)
-    ,@head varchar(200)
+    ,@head nvarchar(200)
 
 -- Add a slash to the end if needed
-set @repository_path = master.dbo.directory_slash(null, @repository_path, '\')
+set @repository_path = master.dbo.directory_slash(null, @repository_path, N'\')
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [validate_repository] Running validate_path to check for the "' + @repository_path + '" folder'
 
@@ -648,7 +607,7 @@ begin
     return @return
 end
 
-set @file_path = @repository_path + '.git\HEAD'
+set @file_path = @repository_path + N'.git\HEAD'
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [validate_repository] Running read_file on "' + @file_path + '"'
 
@@ -664,12 +623,12 @@ if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [validate_r
 
 if nullif(@branch, '') is not null
 begin
-    set @head = 'ref: refs/heads/' + @branch
+    set @head = N'ref: refs/heads/' + @branch
 
     if charindex(@head, @file_content) = 0
     begin
         set @return = -1
-        raiserror('[%s] does not contain the [%s] branch in the HEAD file.', 16, 1, @file_path, @branch)
+        raiserror(N'[%s] does not contain the [%s] branch in the HEAD file.', 16, 1, @file_path, @branch)
         return @return
     end
 end
@@ -704,15 +663,9 @@ select @return as [return]
 use master
 go
 
-if object_id('dbo.validate_database') is not null
-begin
-    drop procedure dbo.validate_database
-end
-go
-
-create procedure dbo.validate_database
+create or alter procedure dbo.validate_database
 (
-     @database_name varchar(128)    -- TODO: Handle database name with/without brackets
+     @database_name nvarchar(128)    -- TODO: Handle database name with/without brackets
     ,@allow_system bit = 0          -- Allows installation on master for things like Ola H.'s tools, Brent Ozar's Blitz tools, etc.
     ,@debug tinyint = 0
 )
@@ -737,7 +690,7 @@ declare @return int = 0
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [validate_database] Checking @database_name: ' + isnull(@database_name, '{null}')
 
 -- Validate database
-if nullif(@database_name, '') is null
+if nullif(@database_name, N'') is null
 begin
     set @return = -1
     raiserror('@database_name can not be empty.', 16, 1)
@@ -748,7 +701,7 @@ end
 if exists (select 1 from sys.databases where name = @database_name and database_id <= 4) and @allow_system = 0
 begin
     set @return = -1
-    raiserror('You can not install on [%s].', 16, 1, @database_name)
+    raiserror(N'You can not install on [%s].', 16, 1, @database_name)
     return @return
 end
 
@@ -756,7 +709,7 @@ end
 if not exists (select 1 from sys.databases where is_read_only = 0 and is_in_standby = 0 and [state] = 0 and [name] = @database_name)
 begin
     set @return = -1
-    raiserror('[%s] does not exist or is not online.', 16, 1, @database_name)
+    raiserror(N'[%s] does not exist or is not online.', 16, 1, @database_name)
     return @return
 end
 
@@ -791,17 +744,11 @@ select @return
 use master
 go
 
-if object_id('dbo.list_files') is not null
-begin
-    drop procedure dbo.list_files
-end
-go
-
-create procedure dbo.list_files
+create or alter procedure dbo.list_files
 (
-     @folder_path varchar(260)      -- [Required] Path to folder (i.e., C:\Users\username\Documents\GitHub\repository-name\)
+     @folder_path nvarchar(260)      -- [Required] Path to folder (i.e., C:\Users\username\Documents\GitHub\repository-name\)
     ,@include_subfolders bit = 0    -- [Optional] Defaults to exclude subfolders
-    ,@extension varchar(10) = 'sql' -- [Required] No period or slash necessary
+    ,@extension nvarchar(10) = N'sql' -- [Required] No period or slash necessary
     ,@debug tinyint = 0
 )
 with encryption
@@ -828,20 +775,20 @@ if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [list_files
 
 declare
      @xp_cmdshell nvarchar(500)
-    ,@full_extension varchar(12)
+    ,@full_extension nvarchar(12)
 
 -- Make sure there's a backslash on the end of the @folder_path
-set @folder_path = master.dbo.directory_slash(null, @folder_path, '\')
+set @folder_path = master.dbo.directory_slash(null, @folder_path, N'\')
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [list_files] @folder_path: ' + isnull(@folder_path, '{null}')
 
-if nullif(@extension, '') is null
+if nullif(@extension, N'') is null
 begin
-    set @full_extension = '*.*'
+    set @full_extension = N'*.*'
 end
 else
 begin
-    set @full_extension = '*.' + replace(@extension, '.', '') -- TODO: Removes all periods. Need to change it to only remove the leading period.
+    set @full_extension = N'*.' + replace(@extension, N'.', N'') -- TODO: Removes all periods. Need to change it to only remove the leading period.
 end
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [list_files] @full_extension: ' + isnull(@full_extension, '{null}')
@@ -889,13 +836,7 @@ exec master.dbo.list_files
 use master
 go
 
-if object_id('dbo.clean_file') is not null
-begin
-    drop procedure dbo.clean_file
-end
-go
-
-create procedure dbo.clean_file
+create or alter procedure dbo.clean_file
 (
      @module_type char(2) -- U, V, P, TR, FN (all function types), SC (Script) -- https://docs.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-objects-transact-sql?view=sql-server-2017
     ,@file_content nvarchar(max) output
@@ -933,7 +874,7 @@ declare
     ,@pos int
     ,@len int
 
-if nullif(@file_content, '') is null
+if nullif(@file_content, N'') is null
 begin
     set @return = -1
     raiserror('@file_content is null.', 16, 1)
@@ -949,8 +890,8 @@ select
      @cr = char(13)
     ,@lf = char(10)
     ,@crlf = @cr + @lf
-    ,@batch_marker = '%' + @crlf + '[Gg][Oo]' + @crlf + '%'
-    ,@batch_marker2 = '%' + @crlf + '[Gg][Oo]' + '%'
+    ,@batch_marker = N'%' + @crlf + N'[Gg][Oo]' + @crlf + N'%'
+    ,@batch_marker2 = N'%' + @crlf + N'[Gg][Oo]' + N'%'
 
 set @len = len(@file_content)
 
@@ -960,18 +901,18 @@ if @debug >= 2 print '[' + convert(varchar(23), getdate(), 121) + '] [clean_file
 if @module_type = 'p'
 begin
     select
-         @file_content = replace(@file_content, 'create or alter proc ', 'create or alter procedure ')
-        ,@file_content = replace(@file_content, 'create proc ', 'create procedure ')
-        ,@file_content = replace(@file_content, 'alter proc ', 'alter procedure ')
+         @file_content = replace(@file_content, N'create or alter proc ', N'create or alter procedure ')
+        ,@file_content = replace(@file_content, N'create proc ', N'create procedure ')
+        ,@file_content = replace(@file_content, N'alter proc ', N'alter procedure ')
 end
 
 select
-     @file_content = replace(@file_content, char(9), replicate(char(32),4)) -- Change tabs to 4 spaces
+     @file_content = replace(@file_content, char(9), replicate(char(32), 4)) -- Change tabs to 4 spaces
     ,@file_content = replace(@file_content, N' go' + @crlf, @crlf + N'go' + @crlf)  -- Remove spaces before the GO (" GO")
     ,@file_content = replace(@file_content, @crlf + N'go ', @crlf + N'go' + @crlf) -- Remove spaces after the GO ("GO ")
 
 -- Are there any carriage returns? There should be at least one.
-if patindex('%' + @cr + '%', @file_content) = 0
+if patindex(N'%' + @cr + N'%', @file_content) = 0
 begin
     if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [clean_file] Attempting to fix unexpected EOL markers'
 
@@ -984,7 +925,7 @@ begin
         set @pos = 1
         while @pos <= 500 -- Only look at the first 500 characters
         begin
-            print substring(@file_content, @pos, 1) + ': ' + ltrim(str(ascii(substring(@file_content, @pos, 1))))
+            print substring(@file_content, @pos, 1) + N': ' + ltrim(str(ascii(substring(@file_content, @pos, 1))))
 
             set @pos += 1
         end
@@ -1000,19 +941,19 @@ begin
     -- Find the position of the module marker
     select @pos = pos
     from (
-        select patindex('%' + m.module_definition + '%', @file_content) as pos
+        select patindex(N'%' + m.module_definition + N'%', @file_content) as pos
         from (
-            select convert(char(2), 'p') as module_type, 'create procedure' as module_definition
-            union select 'p', 'alter procedure'
-            union select 'p', 'create or alter procedure'
-            union select 'fn', 'create function'
-            union select 'fn', 'alter function'
-            union select 'tr', 'create trigger'
-            union select 'tr', 'alter trigger'
-            union select 'u', 'create table'
-            union select 'u', 'alter table'
-            union select 'v', 'create view'
-            union select 'v', 'alter view'
+            select convert(nchar(2), N'p') as module_type, N'create procedure' as module_definition
+            union select 'p', N'alter procedure'
+            union select 'p', N'create or alter procedure'
+            union select 'fn', N'create function'
+            union select 'fn', N'alter function'
+            union select 'tr', N'create trigger'
+            union select 'tr', N'alter trigger'
+            union select 'u', N'create table'
+            union select 'tt', N'create type'
+            union select 'v', N'create view'
+            union select 'v', N'alter view'
         ) m
         where m.module_type = @module_type
     ) p
@@ -1026,7 +967,7 @@ begin
         if @debug >= 6 print '[' + convert(varchar(23), getdate(), 121) + '] [clean_file] @file_content (last 100 characters): ' + right(isnull(@file_content, '{null}'), 100)
 
         set @return = -1
-        raiserror('There was a problem cleaning this file. Are you sure the @module_type [%s] is correct?', 16, 1, @module_type)
+        raiserror(N'There was a problem cleaning this file. Are you sure the @module_type [%s] is correct?', 16, 1, @module_type)
         return @return
     end
 
@@ -1068,7 +1009,7 @@ begin
     end
 end
 
-if @debug >= 9 select '@file_content' as '@file_content', @file_content
+if @debug >= 9 select '@file_content' as [@file_content], @file_content
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [clean_file] END'
 
@@ -1131,10 +1072,7 @@ select * from sys.procedures where name = 'foo'
 
 if object_id('dbo.foo') is not null drop procedure dbo.foo
 
-
-
-
-
+--====================================================================================================
 
 declare
      @file_path varchar(260)
@@ -1142,8 +1080,8 @@ declare
     ,@file_content nvarchar(max)
     ,@debug tinyint
 
---set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\fmcsw\Post Processing\0100 Rollover SP_Log Table.sql'
-set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\FMCSW\Tables\sw.Schedule.sql'
+--set @file_path = 'C:\GitHub\fmc-schedulewise-database\fmcsw\Post Processing\0100 Rollover SP_Log Table.sql'
+set @file_path = 'C:\GitHub\fmc-schedulewise-database\FMCSW\Types\dbo.IdArray.sql'
 
 set @debug = 6
 
@@ -1163,19 +1101,12 @@ exec master.dbo.clean_file
     ,@debug = @debug
 
 */
-
 --====================================================================================================
 
 use master
 go
 
-if object_id('dbo.parse_file') is not null
-begin
-    drop procedure dbo.parse_file
-end
-go
-
-create procedure dbo.parse_file
+create or alter procedure dbo.parse_file
 (
      @file_content nvarchar(max)
     ,@debug tinyint = 0
@@ -1213,7 +1144,7 @@ declare @output table (ident int not null identity(1,1), sql_statement nvarchar(
 
 select
      @crlf = char(13) + char(10)
-    ,@batch_marker = '%' + @crlf + '[Gg][Oo]' + @crlf + '%'
+    ,@batch_marker = N'%' + @crlf + N'[Gg][Oo]' + @crlf + N'%'
 
 -- If the file is null or just GO, set it to nothing.
 if isnull(@file_content, N'') = N'' or @file_content = N'GO' or @file_content = @crlf + N'GO' + @crlf or @file_content = @crlf + N'GO' or @file_content = N'GO' + @crlf
@@ -1223,14 +1154,15 @@ end
 else if patindex(@batch_marker, @file_content) = 0 -- If the file doesn't have a GO at all then add one to the end
 begin
     if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [parse_file] Adding a batch marker to the end'
-    set @file_content += (@crlf + 'go' + @crlf)
+    set @file_content += (@crlf + N'go' + @crlf)
 end
-else if patindex('%' + @crlf + '[Gg][Oo]', @file_content) > 0 -- The file ends with GO but does not have a trailing <CR><LF>
+else if patindex(N'%' + @crlf + N'[Gg][Oo]', @file_content) > 0 -- The file ends with GO but does not have a trailing <CR><LF>
 begin
     if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [parse_file] Adding a <CR><LF> to the end'
     set @file_content += (@crlf)
 end
 
+-- TODO: We may need to change this to datalength
 set @len = len(@file_content)
 
 set @pos = 1
@@ -1260,14 +1192,15 @@ go
 /* DEV TESTING
 
 declare
-     @file_path varchar(260)
-    ,@module_type char(2)
+     @file_path nvarchar(260)
+    ,@module_type nchar(2)
     ,@file_content nvarchar(max)
     ,@debug tinyint
 
 --set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\fmcsw\Revisions\Revisions_2.x.x.sql'
 --set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\Post Processing\9999 Remove Obsolete Routines.sql'
-set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\Post Processing\0100 Rollover SP_Log Table.sql'
+--set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\Post Processing\0100 Rollover SP_Log Table.sql'
+set @file_path = N'C:\GitHub\fmc-schedulewise-database\FMCSW\Post Processing\0350 APAC Divisions Groups Regions Areas.sql'
 
 set @debug = 6
 
@@ -1285,9 +1218,9 @@ exec master.dbo.clean_file
     ,@file_content = @file_content output
     ,@debug = @debug
 
---print '----------------------------------------------------------------------------------------------------'
---print @file_content
---print '----------------------------------------------------------------------------------------------------'
+print '----------------------------------------------------------------------------------------------------'
+print @file_content
+print '----------------------------------------------------------------------------------------------------'
 
 exec master.dbo.parse_file
      @file_content = @file_content
@@ -1369,13 +1302,7 @@ exec master.dbo.parse_file
 use master
 go
 
-if object_id('dbo.get_default_database_location') is not null
-begin
-    drop procedure dbo.get_default_database_location
-end
-go
-
-create procedure dbo.get_default_database_location
+create or alter procedure dbo.get_default_database_location
 (
      @default_data_path nvarchar(1000) = null output
     ,@default_log_path nvarchar(1000) = null output
@@ -1428,7 +1355,7 @@ begin
     if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [get_default_database_location] Trying registry method'
 
     -- Get the instance name
-    set @position = charindex('\', @@servername)
+    set @position = charindex(N'\', @@servername)
 
     if @position = 0
         set @instance_name = N'MSSQLSERVER'
@@ -1453,14 +1380,14 @@ begin
         if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [get_default_database_location] Trying any user database method'
 
         -- Look for the most recent, non-system database and see what they are using.
-        select top 1 @database_name = name from sys.databases where database_id > 4 and name not in ('ReportServer', 'ReportServerTempDB') order by create_date desc
+        select top (1) @database_name = name from sys.databases where database_id > 4 and name not in ('ReportServer', 'ReportServerTempDB') order by create_date desc
 
         if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [get_default_database_location] Getting physical_name from database [' + @database_name + ']'
 
         select
              @sql_params = N'@default_data_path nvarchar(1000) output, @default_log_path nvarchar(1000) output'
             ,@sql = N'select top 1 @default_data_path = physical_name from [<<@database_name>>].sys.database_files where type = 0; select top 1 @default_log_path = physical_name from [<<@database_name>>].sys.database_files where type = 1;'
-            ,@sql = replace(@sql, '<<@database_name>>', @database_name)
+            ,@sql = replace(@sql, N'<<@database_name>>', @database_name)
 
         exec sp_executesql
              @sql, @sql_params
@@ -1475,7 +1402,7 @@ begin
 
             select
                  @sql_params = N'@default_data_path nvarchar(1000) output, @default_log_path nvarchar(1000) output'
-                ,@sql = N'select top 1 @default_data_path = physical_name from [master].sys.database_files where type = 0; select top 1 @default_log_path = physical_name from [master].sys.database_files where type = 1;'
+                ,@sql = N'select top (1) @default_data_path = physical_name from [master].sys.database_files where type = 0; select top (1) @default_log_path = physical_name from [master].sys.database_files where type = 1;'
 
             exec sp_executesql
                  @sql, @sql_params
@@ -1484,8 +1411,8 @@ begin
         end
 
         select
-             @default_data_path = reverse(stuff(reverse(@default_data_path), 1, charindex('\', reverse(@default_data_path)), ''))
-            ,@default_log_path = reverse(stuff(reverse(@default_log_path), 1, charindex('\', reverse(@default_log_path)), ''))
+             @default_data_path = reverse(stuff(reverse(@default_data_path), 1, charindex(N'\', reverse(@default_data_path)), N''))
+            ,@default_log_path = reverse(stuff(reverse(@default_log_path), 1, charindex(N'\', reverse(@default_log_path)), N''))
     end
 end
 
@@ -1516,15 +1443,9 @@ select @default_data_path as default_data_path, @default_log_path as default_log
 use master
 go
 
-if object_id('dbo.create_database') is not null
-begin
-    drop procedure dbo.create_database
-end
-go
-
-create procedure dbo.create_database
+create or alter procedure dbo.create_database
 (
-     @path varchar(260) -- Path to repository folder (i.e., C:\Users\username\Documents\GitHub\repository-name\) or the whatever you want to install folder (i.e., C:\Users\username\Documents\GitHub\repository-name\database\Bootstrap)
+     @path Nvarchar(260) -- Path to repository folder (i.e., C:\Users\username\Documents\GitHub\repository-name\) or the whatever you want to install folder (i.e., C:\Users\username\Documents\GitHub\repository-name\database\Bootstrap)
     ,@database_name nvarchar(128)
     ,@debug tinyint = 0
 )
@@ -1561,16 +1482,10 @@ go
 use master
 go
 
-if object_id('dbo.install_tsqlt_class') is not null
-begin
-    drop procedure dbo.install_tsqlt_class
-end
-go
-
-create procedure dbo.install_tsqlt_class
+create or alter procedure dbo.install_tsqlt_class
 (
      @database_name nvarchar(128)       -- [Required] The database where you want to install the tSQLt class
-    ,@file_path varchar(260)            -- [Required] Full path to the tSQLt.class.sql file
+    ,@file_path Nvarchar(260)            -- [Required] Full path to the tSQLt.class.sql file
     ,@debug tinyint = 0
 )
 with encryption
@@ -1612,7 +1527,7 @@ exec @return = master.dbo.validate_path
 
 if @is_file = 0
 begin
-    raiserror('Invalid path [%s].', 16, 1, @file_path)
+    raiserror(N'Invalid path [%s].', 16, 1, @file_path)
     return @return
 end
 
@@ -1635,7 +1550,7 @@ if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [install_ts
 
 select
      @sql = N'alter authorization on database::[<<@database_name>>] to sa;'
-    ,@sql = replace(@sql, '<<@database_name>>', @database_name)
+    ,@sql = replace(@sql, N'<<@database_name>>', @database_name)
 
 if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [install_tsqlt_class] @sql: ' + isnull(@sql, '{null}')
 
@@ -1649,7 +1564,7 @@ if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [install_ts
 
 select
      @sql = N'alter database [<<@database_name>>] set trustworthy on;'
-    ,@sql = replace(@sql, '<<@database_name>>', @database_name)
+    ,@sql = replace(@sql, N'<<@database_name>>', @database_name)
 
 if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [install_tsqlt_class] @sql: ' + isnull(@sql, '{null}')
 
@@ -1664,7 +1579,7 @@ if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [install_ts
 select
      @sql_params = N'@tsqlt_version_installed varchar(14) output'
     ,@sql = N'if exists (select 1 from [<<@database_name>>].sys.schemas where name = ''tSQLt'') select @tsqlt_version_installed = [Version] from [<<@database_name>>].tSQLt.Info() else set @tsqlt_version_installed = 0'
-    ,@sql = replace(@sql, '<<@database_name>>', @database_name)
+    ,@sql = replace(@sql, N'<<@database_name>>', @database_name)
 
 if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [install_tsqlt_class] @sql: ' + isnull(@sql, '{null}')
 
@@ -1701,10 +1616,10 @@ begin
     -- TODO: Change this to use the list_files, read_file, clean_file, parse_file logic so that you can count the number of GOs and make sure that all of the test classes and individual tests got installed.
     select
          -- If you add the -b switch (sqlcmd -b -E...) it will fail as soon as it runs into an error
-         @xp_cmdshell = 'sqlcmd -E -S "<<@server_name>>" -d "<<@database_name>>" -I -i "<<@file_path>>"'
-        ,@xp_cmdshell = replace(@xp_cmdshell, '<<@server_name>>', @server_name)
-        ,@xp_cmdshell = replace(@xp_cmdshell, '<<@database_name>>', @database_name)
-        ,@xp_cmdshell = replace(@xp_cmdshell, '<<@file_path>>', @file_path)
+         @xp_cmdshell = N'sqlcmd -E -S "<<@server_name>>" -d "<<@database_name>>" -I -i "<<@file_path>>"'
+        ,@xp_cmdshell = replace(@xp_cmdshell, N'<<@server_name>>', @server_name)
+        ,@xp_cmdshell = replace(@xp_cmdshell, N'<<@database_name>>', @database_name)
+        ,@xp_cmdshell = replace(@xp_cmdshell, N'<<@file_path>>', @file_path)
 
     if @debug >= 2 print '[' + convert(varchar(23), getdate(), 121) + '] [install_tsqlt_class] @xp_cmdshell: ' + isnull(@xp_cmdshell, '{null}')
 
@@ -1744,16 +1659,10 @@ exec master.dbo.install_tsqlt_class
 use master
 go
 
-if object_id('dbo.install_tsqlt_tests') is not null
-begin
-    drop procedure dbo.install_tsqlt_tests
-end
-go
-
-create procedure dbo.install_tsqlt_tests
+create or alter procedure dbo.install_tsqlt_tests
 (
      @database_name nvarchar(128)   -- [Required] The database where you want to install the tSQLt class
-    ,@folder_path varchar(260)      -- [Required] Path to the folder containing the Tests (i.e., C:\Users\username\Documents\GitHub\repository-name\database\Tests)
+    ,@folder_path nvarchar(260)      -- [Required] Path to the folder containing the Tests (i.e., C:\Users\username\Documents\GitHub\repository-name\database\Tests)
     ,@debug tinyint = 0
 )
 with encryption
@@ -1775,7 +1684,7 @@ declare
      @return int = 0
     ,@xp_cmdshell nvarchar(4000)
     ,@server_name nvarchar(128) = @@servername
-    ,@file_path varchar(260)
+    ,@file_path nvarchar(260)
     ,@test_class nvarchar(max)
     ,@rowcount int
 
@@ -1787,7 +1696,7 @@ create table #loadoutput (ident int not null identity(1, 1) primary key clustere
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [install_tsqlt_tests] Running validate_path'
 
-set @folder_path = dbo.directory_slash(null, @folder_path, '\')
+set @folder_path = dbo.directory_slash(null, @folder_path, N'\')
 
 -- Validate path
 exec @return = master.dbo.validate_path
@@ -1798,7 +1707,7 @@ exec @return = master.dbo.validate_path
 
 if @return <> 0
 begin
-    raiserror('Invalid path [%s].', 16, 1, @folder_path)
+    raiserror(N'Invalid path [%s].', 16, 1, @folder_path)
     return @return
 end
 
@@ -1817,7 +1726,7 @@ if @return <> 0 return @return -- The previous call will throw an error so don't
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [install_tsqlt_tests] Running install_tsqlt_class on ' + @database_name
 
-set @file_path = dbo.directory_slash(null, @folder_path, '\') + 'tSQLt.Class.sql'
+set @file_path = dbo.directory_slash(null, @folder_path, N'\') + N'tSQLt.Class.sql'
 
 exec @return = master.dbo.install_tsqlt_class
      @database_name = @database_name
@@ -1843,7 +1752,7 @@ delete @output where test_class = 'tSQLt.Class.sql'
 
 select @rowcount = count(*) from @output
 
-if @debug >= 5 select '@output' as '@output', * from @output
+if @debug >= 5 select '@output' as [@output], * from @output
 
 if exists (select 1 from @output where test_class = N'The system cannot find the file specified.')
 begin
@@ -1869,16 +1778,16 @@ begin
     begin
         while exists (select 1 from @output)
         begin
-            select top 1 @test_class = test_class, @xp_cmdshell = null from @output
+            select top (1) @test_class = test_class, @xp_cmdshell = null from @output order by test_class
 
             -- TODO: Change this to use the list_files, read_file, clean_file, parse_file logic so that you can count the number of GOs and make sure that all of the test classes and individual tests got installed.
             select
                  -- If you add the -b switch (sqlcmd -b -E...) it will fail as soon as it runs into an error
-                 @xp_cmdshell = 'sqlcmd -b -E -S "<<@server_name>>" -d "<<@database_name>>" -I -i "<<@folder_path>>\<<@test_class>>"'
-                ,@xp_cmdshell = replace(@xp_cmdshell, '<<@server_name>>', @server_name)
-                ,@xp_cmdshell = replace(@xp_cmdshell, '<<@database_name>>', @database_name)
-                ,@xp_cmdshell = replace(@xp_cmdshell, '<<@folder_path>>', @folder_path)
-                ,@xp_cmdshell = replace(@xp_cmdshell, '<<@test_class>>', @test_class)
+                 @xp_cmdshell = N'sqlcmd -b -E -S "<<@server_name>>" -d "<<@database_name>>" -I -i "<<@folder_path>>\<<@test_class>>"'
+                ,@xp_cmdshell = replace(@xp_cmdshell, N'<<@server_name>>', @server_name)
+                ,@xp_cmdshell = replace(@xp_cmdshell, N'<<@database_name>>', @database_name)
+                ,@xp_cmdshell = replace(@xp_cmdshell, N'<<@folder_path>>', @folder_path)
+                ,@xp_cmdshell = replace(@xp_cmdshell, N'<<@test_class>>', @test_class)
 
             if @debug >= 5 print '[' + convert(varchar(23), getdate(), 121) + '] [install_tsqlt_tests] @xp_cmdshell: ' + isnull(@xp_cmdshell, '{null}')
 
@@ -1893,9 +1802,11 @@ begin
                     exec xp_cmdshell @xp_cmdshell
 
                 update #loadoutput
-                    set ret_code = @return
-                        ,test_class = @test_class
-                    where ret_code is null
+                set
+                     ret_code = @return
+                    ,test_class = @test_class
+                where
+                    ret_code is null
             end
 
             delete @output where test_class = @test_class
@@ -1955,16 +1866,10 @@ exec sp_executesql @sql
 use master
 go
 
-if object_id('dbo.upgrade_database') is not null
-begin
-    drop procedure dbo.upgrade_database
-end
-go
-
-create procedure dbo.upgrade_database
+create or alter procedure dbo.upgrade_database
 (
      @database_name nvarchar(128)       -- [Required] Database name with or without brackets
-    ,@folder_path varchar(260)          -- [Required] Path to the folder to install (i.e., C:\Users\username\Documents\GitHub\repository-name\folder)
+    ,@folder_path nvarchar(260)          -- [Required] Path to the folder to install (i.e., C:\Users\username\Documents\GitHub\repository-name\folder)
     ,@folder_exclusions nvarchar(max)   -- Comma-separated list of folders to exclude (e.g., Build, Roles, Security)
     ,@file_exclusions nvarchar(max)     -- Comma-separated list of files to exclude (e.g., vwSchemaBoundView.sql, SpecialScriptFile.sql)
     ,@allow_system bit = 0              -- Allows installation on master for things like Ola H.'s tools, Brent Ozar's Blitz tools, etc.
@@ -1996,24 +1901,24 @@ declare
      @return int = 0
     ,@rowcount int
     ,@ident int
-    ,@database_folder_path varchar(260)
-    ,@file_path varchar(260)
-    ,@file_name varchar(260)
+    ,@database_folder_path nvarchar(260)
+    ,@file_path nvarchar(260)
+    ,@file_name nvarchar(260)
     ,@file_content nvarchar(max)
     ,@module_type char(2)
     ,@module_type_desc nvarchar(60)
-    ,@module_name varchar(128)
+    ,@module_name nvarchar(128)
     ,@sql nvarchar(max)
     ,@sql_statement nvarchar(max)
     ,@sql_params nvarchar(100)
     ,@object_exists bit
     ,@sort_by int
 
-create table #TableOrder (SortBy smallint not null, TableName varchar(128) not null)
+create table #TableOrder (SortBy smallint not null, TableName nvarchar(128) not null)
 
-create table #ViewOrder (SortBy smallint not null, ViewName varchar(128) not null)
+create table #ViewOrder (SortBy smallint not null, ViewName nvarchar(128) not null)
 
-declare @files table ([file_path] nvarchar(260) null, [file_name] nvarchar(260) null, module_type char(2) null, module_name varchar(128) null, sortby int null)
+declare @files table ([file_path] nvarchar(260) null, [file_name] nvarchar(260) null, module_type char(2) null, module_name nvarchar(128) null, sortby int null)
 
 declare @exclusions table (exclude nvarchar(260) not null)
 
@@ -2023,7 +1928,7 @@ declare @script table (ident int not null, sql_statement nvarchar(max) not null)
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Running validate_path'
 
-set @database_folder_path = dbo.directory_slash(null, @folder_path, '\')
+set @database_folder_path = dbo.directory_slash(null, @folder_path, N'\')
 
 -- Validate path to the database folder in the repository
 exec @return = master.dbo.validate_path
@@ -2034,7 +1939,7 @@ exec @return = master.dbo.validate_path
 
 if @return <> 0
 begin
-    raiserror('Invalid path [%s].', 16, 1, @database_folder_path)
+    raiserror(N'Invalid path [%s].', 16, 1, @database_folder_path)
     return @return
 end
 
@@ -2058,7 +1963,7 @@ insert @files ([file_path])
     exec master.dbo.list_files
          @folder_path = @folder_path
         ,@include_subfolders = 1
-        ,@extension = 'sql'
+        ,@extension = N'sql'
         ,@debug = @debug
 
 delete @files where [file_path] is null
@@ -2084,7 +1989,7 @@ begin
     return @return
 end
 
-if exists (select 1 from @files where [file_path] like 'File Not Found%')
+if exists (select 1 from @files where [file_path] like N'File Not Found%')
 begin
     set @return = -1
     raiserror('File Not Found. Make sure there SQL files in your @path.', 16, 1)
@@ -2096,10 +2001,10 @@ end
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Removing unnecessary paths'
 
 -- TODO: Assumes that you have at least two slashes (i.e., C:\repository-path\folder)
-insert @exclusions (exclude) select distinct '%\%\' + Item + '%' from dbo.udf_split_8k_string_single_delimiter(@folder_exclusions, ',') where Item is not null
+insert @exclusions (exclude) select distinct N'%\%\' + Item + N'%' from dbo.udf_split_unicode_string_single_delimiter(@folder_exclusions, N',') where Item is not null
 
 -- Ideally you would include the extension
-insert @exclusions (exclude) select distinct '%\' + Item from dbo.udf_split_8k_string_single_delimiter(@file_exclusions, ',') where Item is not null
+insert @exclusions (exclude) select distinct N'%\' + Item from dbo.udf_split_unicode_string_single_delimiter(@file_exclusions, N',') where Item is not null
 
 delete f from @files f join @exclusions e on f.file_path like e.exclude
 
@@ -2122,26 +2027,27 @@ begin
     update @files set [file_name] = master.dbo.get_file_name_from_file_path([file_path]) where charindex('\', [file_path]) > 0
 
     -- The only thing we want in the module_name is the schema prefix.
-    update @files set module_name = replace(replace([file_name], 'tsqlt.', ''), '.sql', '')
+    update @files set module_name = replace(replace([file_name], N'tsqlt.', N''), N'.sql', N'')
 
     -- Set the order
     -- TODO: Add Jobs, Roles, Users, Foreign Keys
-    update @files set sortby = 10, module_type = 'sc' where [file_path] like '%\%\Schema%' and sortby is null
-    update @files set sortby = 20, module_type = 'u' where [file_path] like '%\%\Tables\%TableOrder%' and sortby is null
-    update @files set sortby = 30, module_type = 'u' where [file_path] like '%\%\Tables\%ViewOrder%' and sortby is null
-    update @files set sortby = 40, module_type = 'sc' where [file_path] like '%\%\Static Data\%TableOrder%' and sortby is null
-    update @files set sortby = 50, module_type = 'sc' where [file_path] like '%\%\Static Data\%ViewOrder%' and sortby is null
-    update @files set sortby = 100, module_type = 'u' where [file_path] like '%\%\Tables%' and sortby is null -- We will sort them below
-    update @files set sortby = 1000, module_type = 'sc' where [file_path] like '%\Foreign Keys\%DisableForeignKeys%' and sortby is null
-    update @files set sortby = 2000, module_type = 'sc' where [file_path] like '%\%\Revisions%' and sortby is null
-    update @files set sortby = 3000, module_type = 'sc' where [file_path] like '%\%\Static Data%' and sortby is null
-    update @files set sortby = 3500, module_type = 'sc' where [file_path] like '%\Foreign Keys\%EnableForeignKeys%' and sortby is null
-    update @files set sortby = 4000, module_type = 'fn' where [file_path] like '%\%\Functions%' and sortby is null
-    update @files set sortby = 5000, module_type = 'v' where [file_path] like '%\%\Views%' and sortby is null -- We will sort them below
-    update @files set sortby = 6000, module_type = 'p' where [file_path] like '%\%\Stored Procedures%' and sortby is null
-    update @files set sortby = 7000, module_type = 'sc' where [file_path] like '%\%\Triggers%' and sortby is null
-    update @files set sortby = 8000, module_type = 'sc' where [file_path] like '%\%\Jobs%' and sortby is null
-    update @files set sortby = 9000, module_type = 'sc' where [file_path] like '%\%\Post Processing%' and sortby is null
+    update @files set sortby = 10, module_type = 'sc' where [file_path] like N'%\%\Schema%' and sortby is null
+    update @files set sortby = 20, module_type = 'u' where [file_path] like N'%\%\Tables\%TableOrder%' and sortby is null
+    update @files set sortby = 30, module_type = 'u' where [file_path] like N'%\%\Tables\%ViewOrder%' and sortby is null
+    update @files set sortby = 40, module_type = 'sc' where [file_path] like N'%\%\Static Data\%TableOrder%' and sortby is null
+    update @files set sortby = 50, module_type = 'sc' where [file_path] like N'%\%\Static Data\%ViewOrder%' and sortby is null
+    update @files set sortby = 100, module_type = 'u' where [file_path] like N'%\%\Tables%' and sortby is null -- We will sort them below
+    update @files set sortby = 1000, module_type = 'sc' where [file_path] like N'%\Foreign Keys\%DisableForeignKeys%' and sortby is null
+    update @files set sortby = 2000, module_type = 'sc' where [file_path] like N'%\%\Revisions%' and sortby is null
+    update @files set sortby = 3000, module_type = 'sc' where [file_path] like N'%\%\Static Data%' and sortby is null
+    update @files set sortby = 3500, module_type = 'sc' where [file_path] like N'%\Foreign Keys\%EnableForeignKeys%' and sortby is null
+    update @files set sortby = 4000, module_type = 'fn' where [file_path] like N'%\%\Functions%' and sortby is null
+    update @files set sortby = 5000, module_type = 'v' where [file_path] like N'%\%\Views%' and sortby is null -- We will sort them below
+    update @files set sortby = 5500, module_type = 'tt' where [file_path] like N'%\%\Types%' and sortby is null -- Do not put the schema in front of the file name or it will not run.
+    update @files set sortby = 6000, module_type = 'p' where [file_path] like N'%\%\Stored Procedures%' and sortby is null
+    update @files set sortby = 7000, module_type = 'sc' where [file_path] like N'%\%\Triggers%' and sortby is null
+    update @files set sortby = 8000, module_type = 'sc' where [file_path] like N'%\%\Jobs%' and sortby is null
+    update @files set sortby = 9000, module_type = 'sc' where [file_path] like N'%\%\Post Processing%' and sortby is null
 
     delete @files where sortby is null
 
@@ -2187,7 +2093,7 @@ begin
 
             set @sql = N'if object_id(''[<<@database_name>>].dbo.TableOrder'') is not null select SortBy, TableName from [<<@database_name>>].dbo.TableOrder'
 
-            set @sql = replace(@sql, '<<@database_name>>', @database_name)
+            set @sql = replace(@sql, N'<<@database_name>>', @database_name)
 
             if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] @sql: ' + isnull(@sql, '{null}')
 
@@ -2201,7 +2107,7 @@ begin
 
             set @sql = N'if object_id(''[<<@database_name>>].dbo.ViewOrder'') is not null select SortBy, ViewName from [<<@database_name>>].dbo.ViewOrder'
 
-            set @sql = replace(@sql, '<<@database_name>>', @database_name)
+            set @sql = replace(@sql, N'<<@database_name>>', @database_name)
 
             if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] @sql: ' + isnull(@sql, '{null}')
 
@@ -2213,7 +2119,7 @@ begin
 
             if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Updating SortBy for Tables and Views'
 
-            update f set sortby = 100 + o.SortBy, module_type = 'u' from @files f join #TableOrder o on f.module_name = o.TableName where f.[file_path] like '%\%\Tables%';
+            update f set sortby = 100 + o.SortBy, module_type = 'u' from @files f join #TableOrder o on f.module_name = o.TableName where f.[file_path] like N'%\%\Tables%';
 
             set @rowcount = @@rowcount
 
@@ -2221,13 +2127,13 @@ begin
 
             -- This is not really necessary because we remove all foreign keys to allow the Static Data to be added without worrying about the order.
             -- But, it should stop people from adding a "z" to the front of the file name in order to get it to load last.
-            update f set sortby = 3000 + o.SortBy, module_type = 'sc' from @files f join #TableOrder o on f.module_name = o.TableName where f.[file_path] like '%\%\Static Data%';
+            update f set sortby = 3000 + o.SortBy, module_type = 'sc' from @files f join #TableOrder o on f.module_name = o.TableName where f.[file_path] like N'%\%\Static Data%';
 
             set @rowcount = @@rowcount
 
             if @debug >= 2 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] ' + ltrim(str(@rowcount)) + ' row(s) updated in @files from #TableOrder for Static Data'
 
-            update f set sortby = 5000 + o.SortBy, module_type = 'v' from @files f join #ViewOrder o on f.module_name = o.ViewName where f.[file_path] like '%\%\Views%';
+            update f set sortby = 5000 + o.SortBy, module_type = 'v' from @files f join #ViewOrder o on f.module_name = o.ViewName where f.[file_path] like N'%\%\Views%';
 
             set @rowcount = @@rowcount
 
@@ -2251,7 +2157,7 @@ begin
 
         if @return <> 0
         begin
-            raiserror('Failed to read file [%s].', 16, 1, @file_name)
+            raiserror(N'Failed to read file [%s].', 16, 1, @file_name)
             return @return
         end
 
@@ -2264,7 +2170,7 @@ begin
 
         if @return <> 0
         begin
-            raiserror('Failed to clean file [%s].', 16, 1, @file_name)
+            raiserror(N'Failed to clean file [%s].', 16, 1, @file_name)
             return @return
         end
 
@@ -2272,7 +2178,7 @@ begin
         -- TODO: Verify schema
 
         -- Check to see if the object already exists (for certain module types)
-        if @module_type in ('v','fn','p','tr','u')
+        if @module_type in ('v','fn','p','tr','u','tt')
         begin
             -- SQL 2016 SP1 introduced "create or alter {function|procedure|trigger|view}"
             if @module_type in ('v','fn','p','tr')
@@ -2281,10 +2187,10 @@ begin
                 begin
                     if @debug >= 2 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] Change CREATE/ALTER to "create or alter"'
 
-                    if @file_content not like 'create or alter %'
+                    if @file_content not like N'create or alter %'
                     begin
-                        set @file_content = replace(@file_content, 'alter ' + @module_type_desc, 'create or alter ' + @module_type_desc)
-                        set @file_content = replace(@file_content, 'create ' + @module_type_desc, 'create or alter ' + @module_type_desc)
+                        set @file_content = replace(@file_content, N'alter ' + @module_type_desc, N'create or alter ' + @module_type_desc)
+                        set @file_content = replace(@file_content, N'create ' + @module_type_desc, N'create or alter ' + @module_type_desc)
                     end
 
                     insert @script (ident, sql_statement) values (1, @file_content)
@@ -2292,14 +2198,18 @@ begin
                     set @rowcount = @@rowcount
                 end
             end
-            else if @module_type in ('u')
+            else if @module_type in ('u','tt')
             begin
                 -- TODO: Handle brackets
+                if @module_type = 'u'
+                    set @sql = N'if object_id(''[<<@database_name>>].<<@module_name>>'') is not null set @object_exists = 1 else set @object_exists = 0'
+                else if @module_type = 'tt'
+                    set @sql = N'if exists (select 1 from [<<@database_name>>].sys.table_types where is_user_defined = 1 and name = ''<<@module_name>>'') set @object_exists = 1 else set @object_exists = 0'
+
                 select
                      @sql_params = N'@object_exists bit = 0 output'
-                    ,@sql = N'if object_id(''[<<@database_name>>].<<@module_name>>'') is not null set @object_exists = 1 else set @object_exists = 0'
-                    ,@sql = replace(@sql, '<<@database_name>>', @database_name)
-                    ,@sql = replace(@sql, '<<@module_name>>', @module_name)
+                    ,@sql = replace(@sql, N'<<@database_name>>', @database_name)
+                    ,@sql = replace(@sql, N'<<@module_name>>', @module_name)
 
                 if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [upgrade_database] @sql: ' + isnull(@sql, '{null}')
 
@@ -2339,7 +2249,7 @@ begin
         select
              @sql_params = N'@sql_statement nvarchar(max)'
             ,@sql = N'set quoted_identifier on; exec [<<@database_name>>].sys.sp_executesql @sql_statement;'
-            ,@sql = replace(@sql, '<<@database_name>>', @database_name)
+            ,@sql = replace(@sql, N'<<@database_name>>', @database_name)
 
         set @ident = 1
         while @ident <= @rowcount
@@ -2353,7 +2263,7 @@ begin
 
             if @return <> 0
             begin
-                raiserror('Failed to install [%s].', 16, 1, @file_name)
+                raiserror(N'Failed to install [%s].', 16, 1, @file_name)
                 return @return
             end
 
@@ -2420,7 +2330,7 @@ exec @return = master.dbo.upgrade_database
      @database_name = N'FMCSW_LOCAL'
     ,@folder_path = N'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\fmcsw'
     ,@folder_exclusions = 'Build,Bootstrap,Jobs,Roles,Scripts,Tests,Users'
-    ,@file_exclusions = null
+    ,@file_exclusions = 'dbo.vwScheduleStartTime.sql,dbo.vwScheduleEndTime.sql,dbo.vwSchedule.sql'
     ,@debug = 1
 
 select @return as retval
@@ -2447,13 +2357,7 @@ exec tSQLt.RunAll
 use master
 go
 
-if object_id('dbo.drop_database') is not null
-begin
-    drop procedure dbo.drop_database
-end
-go
-
-create procedure dbo.drop_database
+create or alter procedure dbo.drop_database
 (
      @database_name nvarchar(128)   -- [Required] Database name without brackets. TODO: Make this work with/without brackets.
     ,@debug tinyint = 0
@@ -2482,7 +2386,7 @@ if exists (select 1 from sys.databases where name = @database_name)
 begin
     if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [drop_database] Setting SINGLE_USER mode on database [' + @database_name + ']'
 
-    set @sql = 'ALTER DATABASE [' + @database_name + '] SET SINGLE_USER WITH ROLLBACK IMMEDIATE'
+    set @sql = N'ALTER DATABASE [' + @database_name + N'] SET SINGLE_USER WITH ROLLBACK IMMEDIATE'
 
     if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [drop_database] @sql: ' + isnull(@sql, '{null}')
 
@@ -2497,7 +2401,7 @@ begin
 
     if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [drop_database] Dropping database [' + @database_name + ']'
 
-    set @sql = 'DROP DATABASE [' + @database_name + ']'
+    set @sql = N'DROP DATABASE [' + @database_name + N']'
 
     if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [drop_database] @sql: ' + isnull(@sql, '{null}')
 
@@ -2505,7 +2409,7 @@ begin
         exec @return = sp_executesql @sql
     end try
     begin catch
-        set @sql = 'ALTER DATABASE [' + @database_name + '] SET MULTI_USER'
+        set @sql = N'ALTER DATABASE [' + @database_name + N'] SET MULTI_USER'
 
         exec @return = sp_executesql @sql
 
@@ -2540,13 +2444,7 @@ select * from sys.databases where name = 'foo'
 use master
 go
 
-if object_id('dbo.restore_database') is not null
-begin
-    drop procedure dbo.restore_database
-end
-go
-
-create procedure dbo.restore_database
+create or alter procedure dbo.restore_database
 (
      @database_name nvarchar(128)               -- [Required] Does not have to be the same name as the backup. You can restore a Database.bak file as a database named "PaulHogan" if you want.
     ,@file_path nvarchar(4000) = null           -- [Optional] The full file path to the .bak file (e.g., D:\SQL\Backups\Database.bak). If not supplied we will look in the default location.
@@ -2689,6 +2587,7 @@ if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_da
 12 = 2014
 13 = 2016
 14 = 2017
+15 = 2019
 */
 
 if @sql_version >= 14 -- SQL 2017
@@ -2748,12 +2647,12 @@ end
 
 --====================================================================================================
 
-if charindex(',', @file_path) > 0
+if charindex(N',', @file_path) > 0
 begin
     set @multi_path = 1
 
     -- Grab the first path
-    select @first_full_path = Item from master.dbo.udf_split_8k_string_single_delimiter(@file_path, ',') where ItemNumber = 1
+    select top (1) @first_full_path = Item from dbo.udf_split_unicode_string_single_delimiter(@file_path, N',') where Item is not null order by ItemNumber
 end
 else
 begin
@@ -2768,12 +2667,12 @@ select
      @header_sql = N'RESTORE HEADERONLY FROM DISK = N''<<@first_full_path>>''; '
     ,@header_sql = replace(@header_sql, N'<<@first_full_path>>', @first_full_path)
 
-if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @header_sql: ' + isnull(@header_sql, N'{null}')
+if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @header_sql: ' + isnull(@header_sql, '{null}')
 
 insert #headeronly
     exec(@header_sql)
 
-if @debug >= 3 select '#headeronly before' as '#headeronly', * from #headeronly
+if @debug >= 3 select '#headeronly before' as [#headeronly], * from #headeronly
 
 if @file_number is null or @file_number < 1
 begin
@@ -2797,12 +2696,12 @@ if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_da
 insert #filelistonly
     exec(@filelist_sql)
 
-if @debug >= 6 select '#filelistonly' as '#filelistonly', * from #filelistonly
+if @debug >= 6 select '#filelistonly' as [#filelistonly], * from #filelistonly
 
 insert @filelistonly (ident, LogicalName, PhysicalName, [Type], FileGroupName, FileId, FileGroupId)
     select ident, LogicalName, PhysicalName, [Type], FileGroupName, FileId, FileGroupId from #filelistonly
 
-if @debug >= 3 select '@filelistonly before' as '@filelistonly', * from @filelistonly
+if @debug >= 3 select '@filelistonly before' as [@filelistonly], * from @filelistonly
 
 --====================================================================================================
 
@@ -2821,9 +2720,9 @@ begin
 
     if @debug >= 1
     begin
-        print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @sql_data_directory: ' + isnull(@sql_data_directory, N'{null}')
-        print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @sql_log_directory: ' + isnull(@sql_log_directory, N'{null}')
-        print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @sql_ft_directory: ' + isnull(@sql_ft_directory, N'{null}')
+        print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @sql_data_directory: ' + isnull(@sql_data_directory, '{null}')
+        print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @sql_log_directory: ' + isnull(@sql_log_directory, '{null}')
+        print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @sql_ft_directory: ' + isnull(@sql_ft_directory, '{null}')
     end
 end
 
@@ -2831,15 +2730,15 @@ end
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] Setting SQL paths and database logical names'
 
-update @filelistonly set Directory = '<<@sql_data_directory>>', NewLogicalName = '<<@database_name>>', NewPhysicalName = '<<@database_name>>.mdf' where [type] = 'D' and FileGroupName = 'PRIMARY' and FileId = 1
-update @filelistonly set Directory = '<<@sql_data_directory>>', NewLogicalName = '<<@database_name>>_audit', NewPhysicalName = '<<@database_name>>_audit.ndf' where [type] = 'D' and FileGroupName = 'AUDIT'
-update @filelistonly set Directory = '<<@sql_data_directory>>', NewLogicalName = '<<@database_name>>_indexes', NewPhysicalName = '<<@database_name>>_indexes.ndf' where [type] = 'D' and FileGroupName = 'INDEXES'
-update @filelistonly set Directory = '<<@sql_data_directory>>', NewLogicalName = '<<@database_name>>_data', NewPhysicalName = '<<@database_name>>_data.ndf' where [type] = 'D' and FileGroupName = 'DATA'
-update @filelistonly set Directory = '<<@sql_log_directory>>', NewLogicalName = '<<@database_name>>_log', NewPhysicalName = '<<@database_name>>_log.ldf' where [type] = 'L' and FileGroupId = 0
-update @filelistonly set Directory = '<<@sql_ft_directory>>', NewLogicalName = '<<@database_name>>_fulltext', NewPhysicalName = '<<@database_name>>_fulltext.ndf' where [type] = 'F' or FileGroupName like '%OtherTables%' or LogicalName like 'ftrow[_]%'
-update @filelistonly set Directory = '<<@sql_data_directory>>', NewLogicalName = '<<@database_name>>_temp_storage', NewPhysicalName = '<<@database_name>>_temp_storage.ndf' where [type] = 'D' and FileGroupName like '%Temp_Storage%'
+update @filelistonly set Directory = N'<<@sql_data_directory>>', NewLogicalName = N'<<@database_name>>', NewPhysicalName = N'<<@database_name>>.mdf' where [type] = 'D' and FileGroupName = 'PRIMARY' and FileId = 1
+update @filelistonly set Directory = N'<<@sql_data_directory>>', NewLogicalName = N'<<@database_name>>_audit', NewPhysicalName = N'<<@database_name>>_audit.ndf' where [type] = 'D' and FileGroupName = 'AUDIT'
+update @filelistonly set Directory = N'<<@sql_data_directory>>', NewLogicalName = N'<<@database_name>>_indexes', NewPhysicalName = N'<<@database_name>>_indexes.ndf' where [type] = 'D' and FileGroupName = 'INDEXES'
+update @filelistonly set Directory = N'<<@sql_data_directory>>', NewLogicalName = N'<<@database_name>>_data', NewPhysicalName = N'<<@database_name>>_data.ndf' where [type] = 'D' and FileGroupName = 'DATA'
+update @filelistonly set Directory = N'<<@sql_log_directory>>', NewLogicalName = N'<<@database_name>>_log', NewPhysicalName = N'<<@database_name>>_log.ldf' where [type] = 'L' and FileGroupId = 0
+update @filelistonly set Directory = N'<<@sql_ft_directory>>', NewLogicalName = N'<<@database_name>>_fulltext', NewPhysicalName = N'<<@database_name>>_fulltext.ndf' where [type] = 'F' or FileGroupName like '%OtherTables%' or LogicalName like 'ftrow[_]%'
+update @filelistonly set Directory = N'<<@sql_data_directory>>', NewLogicalName = N'<<@database_name>>_temp_storage', NewPhysicalName = N'<<@database_name>>_temp_storage.ndf' where [type] = 'D' and FileGroupName like '%Temp_Storage%'
 
-if @debug >= 2 select '@filelistonly after' as '@filelistonly', * from @filelistonly
+if @debug >= 2 select '@filelistonly after' as [@filelistonly], * from @filelistonly
 
 --====================================================================================================
 
@@ -2848,7 +2747,7 @@ if @multi_path = 1
 begin
     set @restore_sql = N'RESTORE DATABASE [<<@database_name>>] FROM DISK = N''<<@first_full_path>>'''
 
-    select @restore_sql = @restore_sql + N', DISK = N''' + Item + '''' from master.dbo.split_8k_string_single_delimiter(@file_path, ',') where ItemNumber > 1
+    select @restore_sql = @restore_sql + N', DISK = N''' + Item + N'''' from dbo.udf_split_unicode_string_single_delimiter(@file_path, N',') where ItemNumber > 1
 
     set @restore_sql = @restore_sql + N' WITH FILE = <<@file_number>>'
 end
@@ -2869,7 +2768,7 @@ select
     ,@restore_sql = replace(@restore_sql, N'<<@sql_log_directory>>', master.dbo.directory_slash(null, @sql_log_directory, N'\'))
     ,@restore_sql = replace(@restore_sql, N'<<@sql_ft_directory>>', master.dbo.directory_slash(null, @sql_ft_directory, N'\'))
 
-if @debug >= 3 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @restore_sql (2): ' + isnull(@restore_sql, N'{null}')
+if @debug >= 3 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @restore_sql (2): ' + isnull(@restore_sql, '{null}')
 
 if @restore_sql is null
 begin

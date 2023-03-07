@@ -3,13 +3,7 @@
 use master
 go
 
-if object_id('dbo.parse_file') is not null
-begin
-    drop procedure dbo.parse_file
-end
-go
-
-create procedure dbo.parse_file
+create or alter procedure dbo.parse_file
 (
      @file_content nvarchar(max)
     ,@debug tinyint = 0
@@ -47,7 +41,7 @@ declare @output table (ident int not null identity(1,1), sql_statement nvarchar(
 
 select
      @crlf = char(13) + char(10)
-    ,@batch_marker = '%' + @crlf + '[Gg][Oo]' + @crlf + '%'
+    ,@batch_marker = N'%' + @crlf + N'[Gg][Oo]' + @crlf + N'%'
 
 -- If the file is null or just GO, set it to nothing.
 if isnull(@file_content, N'') = N'' or @file_content = N'GO' or @file_content = @crlf + N'GO' + @crlf or @file_content = @crlf + N'GO' or @file_content = N'GO' + @crlf
@@ -57,14 +51,15 @@ end
 else if patindex(@batch_marker, @file_content) = 0 -- If the file doesn't have a GO at all then add one to the end
 begin
     if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [parse_file] Adding a batch marker to the end'
-    set @file_content += (@crlf + 'go' + @crlf)
+    set @file_content += (@crlf + N'go' + @crlf)
 end
-else if patindex('%' + @crlf + '[Gg][Oo]', @file_content) > 0 -- The file ends with GO but does not have a trailing <CR><LF>
+else if patindex(N'%' + @crlf + N'[Gg][Oo]', @file_content) > 0 -- The file ends with GO but does not have a trailing <CR><LF>
 begin
     if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [parse_file] Adding a <CR><LF> to the end'
     set @file_content += (@crlf)
 end
 
+-- TODO: We may need to change this to datalength
 set @len = len(@file_content)
 
 set @pos = 1
@@ -94,14 +89,15 @@ go
 /* DEV TESTING
 
 declare
-     @file_path varchar(260)
-    ,@module_type char(2)
+     @file_path nvarchar(260)
+    ,@module_type nchar(2)
     ,@file_content nvarchar(max)
     ,@debug tinyint
 
 --set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\fmcsw\Revisions\Revisions_2.x.x.sql'
 --set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\Post Processing\9999 Remove Obsolete Routines.sql'
-set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\Post Processing\0100 Rollover SP_Log Table.sql'
+--set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\Post Processing\0100 Rollover SP_Log Table.sql'
+set @file_path = N'C:\GitHub\fmc-schedulewise-database\FMCSW\Post Processing\0350 APAC Divisions Groups Regions Areas.sql'
 
 set @debug = 6
 
@@ -119,9 +115,9 @@ exec master.dbo.clean_file
     ,@file_content = @file_content output
     ,@debug = @debug
 
---print '----------------------------------------------------------------------------------------------------'
---print @file_content
---print '----------------------------------------------------------------------------------------------------'
+print '----------------------------------------------------------------------------------------------------'
+print @file_content
+print '----------------------------------------------------------------------------------------------------'
 
 exec master.dbo.parse_file
      @file_content = @file_content
@@ -197,4 +193,57 @@ exec master.dbo.parse_file
      @file_content = @file_content
     ,@debug = 1
 */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+declare
+     @file_path nvarchar(260)
+    ,@module_type nchar(2)
+    ,@file_content nvarchar(max)
+    ,@debug tinyint
+
+--set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\fmcsw\Revisions\Revisions_2.x.x.sql'
+--set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\Post Processing\9999 Remove Obsolete Routines.sql'
+--set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\Post Processing\0100 Rollover SP_Log Table.sql'
+set @file_path = N'C:\GitHub\fmc-schedulewise-database\FMCSW\Post Processing\UnicodeTesting.sql'
+
+set @debug = 9
+
+exec master.dbo.read_file
+     @file_path = @file_path
+    ,@file_content = @file_content output
+    ,@debug = @debug
+
+--print @file_path
+print '-before clean---------------------------------------------------------------------------------------------------'
+print @file_content
+print '----------------------------------------------------------------------------------------------------'
+
+set @module_type = 'sc'
+
+exec master.dbo.clean_file
+     @module_type = @module_type
+    ,@file_content = @file_content output
+    ,@debug = @debug
+
+print '----------------------------------------------------------------------------------------------------'
+print @file_content
+print '----------------------------------------------------------------------------------------------------'
+
+exec master.dbo.parse_file
+     @file_content = @file_content
+    ,@debug = @debug
+GO
 

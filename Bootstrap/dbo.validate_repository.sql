@@ -3,16 +3,10 @@
 use master
 go
 
-if object_id('dbo.validate_repository') is not null
-begin
-    drop procedure dbo.validate_repository
-end
-go
-
-create procedure dbo.validate_repository
+create or alter procedure dbo.validate_repository
 (
      @repository_path nvarchar(2000)    -- [Required] The full path to the base of the repository (e.g., C:\Users\username\Documents\GitHub\repository-name) where the (hidden) .git folder is located.
-    ,@branch varchar(50) = null         -- [Optional] The branch that you are expecting to be checked out (i.e., "ref: refs/heads/development").
+    ,@branch nvarchar(50) = null         -- [Optional] The branch that you are expecting to be checked out (i.e., "ref: refs/heads/development").
     ,@debug tinyint = 0
 )
 with encryption
@@ -39,12 +33,12 @@ if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [validate_r
 
 declare
      @return int = 0
-    ,@file_path varchar(260)
+    ,@file_path nvarchar(260)
     ,@file_content nvarchar(max)
-    ,@head varchar(200)
+    ,@head nvarchar(200)
 
 -- Add a slash to the end if needed
-set @repository_path = master.dbo.directory_slash(null, @repository_path, '\')
+set @repository_path = master.dbo.directory_slash(null, @repository_path, N'\')
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [validate_repository] Running validate_path to check for the "' + @repository_path + '" folder'
 
@@ -61,7 +55,7 @@ begin
     return @return
 end
 
-set @file_path = @repository_path + '.git\HEAD'
+set @file_path = @repository_path + N'.git\HEAD'
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [validate_repository] Running read_file on "' + @file_path + '"'
 
@@ -77,12 +71,12 @@ if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [validate_r
 
 if nullif(@branch, '') is not null
 begin
-    set @head = 'ref: refs/heads/' + @branch
+    set @head = N'ref: refs/heads/' + @branch
 
     if charindex(@head, @file_content) = 0
     begin
         set @return = -1
-        raiserror('[%s] does not contain the [%s] branch in the HEAD file.', 16, 1, @file_path, @branch)
+        raiserror(N'[%s] does not contain the [%s] branch in the HEAD file.', 16, 1, @file_path, @branch)
         return @return
     end
 end

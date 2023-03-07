@@ -3,18 +3,13 @@
 use master
 go
 
-if object_id('dbo.udf_split_8k_string_single_delimiter') is not null
-begin
-    drop function dbo.udf_split_8k_string_single_delimiter
-end
-go
-
-create function dbo.udf_split_8k_string_single_delimiter
+create or alter function dbo.udf_split_8k_string_single_delimiter
 (
      @string varchar(8000)
     ,@delimiter char(1) = ','
 )
 --WARNING!!! DO NOT USE MAX DATA-TYPES HERE! IT WILL KILL PERFORMANCE!
+--WARNING!!! DO NOT CHANGE @STRING TO NVARCHAR. USE STRING_SPLIT INSTEAD.
 --This method produces zero reads compared to rs_fn_splitNVARCHAR
 returns table with schemabinding as
 return

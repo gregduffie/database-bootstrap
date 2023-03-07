@@ -3,13 +3,7 @@
 use master
 go
 
-if object_id('dbo.get_default_database_location') is not null
-begin
-    drop procedure dbo.get_default_database_location
-end
-go
-
-create procedure dbo.get_default_database_location
+create or alter procedure dbo.get_default_database_location
 (
      @default_data_path nvarchar(1000) = null output
     ,@default_log_path nvarchar(1000) = null output
@@ -62,7 +56,7 @@ begin
     if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [get_default_database_location] Trying registry method'
 
     -- Get the instance name
-    set @position = charindex('\', @@servername)
+    set @position = charindex(N'\', @@servername)
 
     if @position = 0
         set @instance_name = N'MSSQLSERVER'
@@ -87,14 +81,14 @@ begin
         if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [get_default_database_location] Trying any user database method'
 
         -- Look for the most recent, non-system database and see what they are using.
-        select top 1 @database_name = name from sys.databases where database_id > 4 and name not in ('ReportServer', 'ReportServerTempDB') order by create_date desc
+        select top (1) @database_name = name from sys.databases where database_id > 4 and name not in ('ReportServer', 'ReportServerTempDB') order by create_date desc
 
         if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [get_default_database_location] Getting physical_name from database [' + @database_name + ']'
 
         select
              @sql_params = N'@default_data_path nvarchar(1000) output, @default_log_path nvarchar(1000) output'
             ,@sql = N'select top 1 @default_data_path = physical_name from [<<@database_name>>].sys.database_files where type = 0; select top 1 @default_log_path = physical_name from [<<@database_name>>].sys.database_files where type = 1;'
-            ,@sql = replace(@sql, '<<@database_name>>', @database_name)
+            ,@sql = replace(@sql, N'<<@database_name>>', @database_name)
 
         exec sp_executesql
              @sql, @sql_params
@@ -109,7 +103,7 @@ begin
 
             select
                  @sql_params = N'@default_data_path nvarchar(1000) output, @default_log_path nvarchar(1000) output'
-                ,@sql = N'select top 1 @default_data_path = physical_name from [master].sys.database_files where type = 0; select top 1 @default_log_path = physical_name from [master].sys.database_files where type = 1;'
+                ,@sql = N'select top (1) @default_data_path = physical_name from [master].sys.database_files where type = 0; select top (1) @default_log_path = physical_name from [master].sys.database_files where type = 1;'
 
             exec sp_executesql
                  @sql, @sql_params
@@ -118,8 +112,8 @@ begin
         end
 
         select
-             @default_data_path = reverse(stuff(reverse(@default_data_path), 1, charindex('\', reverse(@default_data_path)), ''))
-            ,@default_log_path = reverse(stuff(reverse(@default_log_path), 1, charindex('\', reverse(@default_log_path)), ''))
+             @default_data_path = reverse(stuff(reverse(@default_data_path), 1, charindex(N'\', reverse(@default_data_path)), N''))
+            ,@default_log_path = reverse(stuff(reverse(@default_log_path), 1, charindex(N'\', reverse(@default_log_path)), N''))
     end
 end
 

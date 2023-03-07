@@ -3,13 +3,7 @@
 use master
 go
 
-if object_id('dbo.clean_file') is not null
-begin
-    drop procedure dbo.clean_file
-end
-go
-
-create procedure dbo.clean_file
+create or alter procedure dbo.clean_file
 (
      @module_type char(2) -- U, V, P, TR, FN (all function types), SC (Script) -- https://docs.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-objects-transact-sql?view=sql-server-2017
     ,@file_content nvarchar(max) output
@@ -47,7 +41,7 @@ declare
     ,@pos int
     ,@len int
 
-if nullif(@file_content, '') is null
+if nullif(@file_content, N'') is null
 begin
     set @return = -1
     raiserror('@file_content is null.', 16, 1)
@@ -63,8 +57,8 @@ select
      @cr = char(13)
     ,@lf = char(10)
     ,@crlf = @cr + @lf
-    ,@batch_marker = '%' + @crlf + '[Gg][Oo]' + @crlf + '%'
-    ,@batch_marker2 = '%' + @crlf + '[Gg][Oo]' + '%'
+    ,@batch_marker = N'%' + @crlf + N'[Gg][Oo]' + @crlf + N'%'
+    ,@batch_marker2 = N'%' + @crlf + N'[Gg][Oo]' + N'%'
 
 set @len = len(@file_content)
 
@@ -74,18 +68,18 @@ if @debug >= 2 print '[' + convert(varchar(23), getdate(), 121) + '] [clean_file
 if @module_type = 'p'
 begin
     select
-         @file_content = replace(@file_content, 'create or alter proc ', 'create or alter procedure ')
-        ,@file_content = replace(@file_content, 'create proc ', 'create procedure ')
-        ,@file_content = replace(@file_content, 'alter proc ', 'alter procedure ')
+         @file_content = replace(@file_content, N'create or alter proc ', N'create or alter procedure ')
+        ,@file_content = replace(@file_content, N'create proc ', N'create procedure ')
+        ,@file_content = replace(@file_content, N'alter proc ', N'alter procedure ')
 end
 
 select
-     @file_content = replace(@file_content, char(9), replicate(char(32),4)) -- Change tabs to 4 spaces
+     @file_content = replace(@file_content, char(9), replicate(char(32), 4)) -- Change tabs to 4 spaces
     ,@file_content = replace(@file_content, N' go' + @crlf, @crlf + N'go' + @crlf)  -- Remove spaces before the GO (" GO")
     ,@file_content = replace(@file_content, @crlf + N'go ', @crlf + N'go' + @crlf) -- Remove spaces after the GO ("GO ")
 
 -- Are there any carriage returns? There should be at least one.
-if patindex('%' + @cr + '%', @file_content) = 0
+if patindex(N'%' + @cr + N'%', @file_content) = 0
 begin
     if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [clean_file] Attempting to fix unexpected EOL markers'
 
@@ -98,7 +92,7 @@ begin
         set @pos = 1
         while @pos <= 500 -- Only look at the first 500 characters
         begin
-            print substring(@file_content, @pos, 1) + ': ' + ltrim(str(ascii(substring(@file_content, @pos, 1))))
+            print substring(@file_content, @pos, 1) + N': ' + ltrim(str(ascii(substring(@file_content, @pos, 1))))
 
             set @pos += 1
         end
@@ -114,19 +108,19 @@ begin
     -- Find the position of the module marker
     select @pos = pos
     from (
-        select patindex('%' + m.module_definition + '%', @file_content) as pos
+        select patindex(N'%' + m.module_definition + N'%', @file_content) as pos
         from (
-            select convert(char(2), 'p') as module_type, 'create procedure' as module_definition
-            union select 'p', 'alter procedure'
-            union select 'p', 'create or alter procedure'
-            union select 'fn', 'create function'
-            union select 'fn', 'alter function'
-            union select 'tr', 'create trigger'
-            union select 'tr', 'alter trigger'
-            union select 'u', 'create table'
-            union select 'u', 'alter table'
-            union select 'v', 'create view'
-            union select 'v', 'alter view'
+            select convert(nchar(2), N'p') as module_type, N'create procedure' as module_definition
+            union select 'p', N'alter procedure'
+            union select 'p', N'create or alter procedure'
+            union select 'fn', N'create function'
+            union select 'fn', N'alter function'
+            union select 'tr', N'create trigger'
+            union select 'tr', N'alter trigger'
+            union select 'u', N'create table'
+            union select 'tt', N'create type'
+            union select 'v', N'create view'
+            union select 'v', N'alter view'
         ) m
         where m.module_type = @module_type
     ) p
@@ -140,7 +134,7 @@ begin
         if @debug >= 6 print '[' + convert(varchar(23), getdate(), 121) + '] [clean_file] @file_content (last 100 characters): ' + right(isnull(@file_content, '{null}'), 100)
 
         set @return = -1
-        raiserror('There was a problem cleaning this file. Are you sure the @module_type [%s] is correct?', 16, 1, @module_type)
+        raiserror(N'There was a problem cleaning this file. Are you sure the @module_type [%s] is correct?', 16, 1, @module_type)
         return @return
     end
 
@@ -182,7 +176,7 @@ begin
     end
 end
 
-if @debug >= 9 select '@file_content' as '@file_content', @file_content
+if @debug >= 9 select '@file_content' as [@file_content], @file_content
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [clean_file] END'
 
@@ -245,10 +239,7 @@ select * from sys.procedures where name = 'foo'
 
 if object_id('dbo.foo') is not null drop procedure dbo.foo
 
-
-
-
-
+--====================================================================================================
 
 declare
      @file_path varchar(260)
@@ -256,8 +247,8 @@ declare
     ,@file_content nvarchar(max)
     ,@debug tinyint
 
---set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\fmcsw\Post Processing\0100 Rollover SP_Log Table.sql'
-set @file_path = 'C:\Users\gduffie\Documents\GitHub\fmc-schedulewise-database\FMCSW\Tables\sw.Schedule.sql'
+--set @file_path = 'C:\GitHub\fmc-schedulewise-database\fmcsw\Post Processing\0100 Rollover SP_Log Table.sql'
+set @file_path = 'C:\GitHub\fmc-schedulewise-database\FMCSW\Types\dbo.IdArray.sql'
 
 set @debug = 6
 
@@ -277,4 +268,3 @@ exec master.dbo.clean_file
     ,@debug = @debug
 
 */
-

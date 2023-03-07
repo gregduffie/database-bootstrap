@@ -3,35 +3,29 @@
 use master
 go
 
-if exists (select 1 from information_schema.routines where routine_name = 'directory_slash' and routine_schema = 'dbo')
-begin
-    drop function dbo.directory_slash
-end
-go
-
-create function dbo.directory_slash
+create or alter function dbo.directory_slash
 (
-     @beginning_slash varchar(3)
-    ,@directory varchar(260)
-    ,@ending_slash varchar(3)
+     @beginning_slash nvarchar(3)
+    ,@directory nvarchar(260)
+    ,@ending_slash nvarchar(3)
 )
 returns varchar(260)
 with encryption
 as
 begin
     select
-         @beginning_slash = isnull(@beginning_slash, '')
-        ,@directory = isnull(@directory, '')
-        ,@ending_slash = isnull(@ending_slash, '')
+         @beginning_slash = isnull(@beginning_slash, N'')
+        ,@directory = isnull(@directory, N'')
+        ,@ending_slash = isnull(@ending_slash, N'')
 
     --remove all slashes from beginning
-    while left(@directory, 1) in ('\', '/')
+    while left(@directory, 1) in (N'\', N'/')
     begin
         set @directory = right(@directory, len(@directory) - 1)
     end
 
     --remove all slashes from end
-    while right(@directory, 1) in ('\', '/')
+    while right(@directory, 1) in (N'\', N'/')
     begin
         set @directory = left(@directory, len(@directory) - 1)
     end

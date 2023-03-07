@@ -3,13 +3,7 @@
 use master
 go
 
-if object_id('dbo.restore_database') is not null
-begin
-    drop procedure dbo.restore_database
-end
-go
-
-create procedure dbo.restore_database
+create or alter procedure dbo.restore_database
 (
      @database_name nvarchar(128)               -- [Required] Does not have to be the same name as the backup. You can restore a Database.bak file as a database named "PaulHogan" if you want.
     ,@file_path nvarchar(4000) = null           -- [Optional] The full file path to the .bak file (e.g., D:\SQL\Backups\Database.bak). If not supplied we will look in the default location.
@@ -152,6 +146,7 @@ if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_da
 12 = 2014
 13 = 2016
 14 = 2017
+15 = 2019
 */
 
 if @sql_version >= 14 -- SQL 2017
@@ -211,12 +206,12 @@ end
 
 --====================================================================================================
 
-if charindex(',', @file_path) > 0
+if charindex(N',', @file_path) > 0
 begin
     set @multi_path = 1
 
     -- Grab the first path
-    select @first_full_path = Item from master.dbo.udf_split_8k_string_single_delimiter(@file_path, ',') where ItemNumber = 1
+    select top (1) @first_full_path = Item from dbo.udf_split_unicode_string_single_delimiter(@file_path, N',') where Item is not null order by ItemNumber
 end
 else
 begin
@@ -231,12 +226,12 @@ select
      @header_sql = N'RESTORE HEADERONLY FROM DISK = N''<<@first_full_path>>''; '
     ,@header_sql = replace(@header_sql, N'<<@first_full_path>>', @first_full_path)
 
-if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @header_sql: ' + isnull(@header_sql, N'{null}')
+if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @header_sql: ' + isnull(@header_sql, '{null}')
 
 insert #headeronly
     exec(@header_sql)
 
-if @debug >= 3 select '#headeronly before' as '#headeronly', * from #headeronly
+if @debug >= 3 select '#headeronly before' as [#headeronly], * from #headeronly
 
 if @file_number is null or @file_number < 1
 begin
@@ -260,12 +255,12 @@ if @debug >= 4 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_da
 insert #filelistonly
     exec(@filelist_sql)
 
-if @debug >= 6 select '#filelistonly' as '#filelistonly', * from #filelistonly
+if @debug >= 6 select '#filelistonly' as [#filelistonly], * from #filelistonly
 
 insert @filelistonly (ident, LogicalName, PhysicalName, [Type], FileGroupName, FileId, FileGroupId)
     select ident, LogicalName, PhysicalName, [Type], FileGroupName, FileId, FileGroupId from #filelistonly
 
-if @debug >= 3 select '@filelistonly before' as '@filelistonly', * from @filelistonly
+if @debug >= 3 select '@filelistonly before' as [@filelistonly], * from @filelistonly
 
 --====================================================================================================
 
@@ -284,9 +279,9 @@ begin
 
     if @debug >= 1
     begin
-        print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @sql_data_directory: ' + isnull(@sql_data_directory, N'{null}')
-        print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @sql_log_directory: ' + isnull(@sql_log_directory, N'{null}')
-        print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @sql_ft_directory: ' + isnull(@sql_ft_directory, N'{null}')
+        print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @sql_data_directory: ' + isnull(@sql_data_directory, '{null}')
+        print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @sql_log_directory: ' + isnull(@sql_log_directory, '{null}')
+        print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @sql_ft_directory: ' + isnull(@sql_ft_directory, '{null}')
     end
 end
 
@@ -294,15 +289,15 @@ end
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] Setting SQL paths and database logical names'
 
-update @filelistonly set Directory = '<<@sql_data_directory>>', NewLogicalName = '<<@database_name>>', NewPhysicalName = '<<@database_name>>.mdf' where [type] = 'D' and FileGroupName = 'PRIMARY' and FileId = 1
-update @filelistonly set Directory = '<<@sql_data_directory>>', NewLogicalName = '<<@database_name>>_audit', NewPhysicalName = '<<@database_name>>_audit.ndf' where [type] = 'D' and FileGroupName = 'AUDIT'
-update @filelistonly set Directory = '<<@sql_data_directory>>', NewLogicalName = '<<@database_name>>_indexes', NewPhysicalName = '<<@database_name>>_indexes.ndf' where [type] = 'D' and FileGroupName = 'INDEXES'
-update @filelistonly set Directory = '<<@sql_data_directory>>', NewLogicalName = '<<@database_name>>_data', NewPhysicalName = '<<@database_name>>_data.ndf' where [type] = 'D' and FileGroupName = 'DATA'
-update @filelistonly set Directory = '<<@sql_log_directory>>', NewLogicalName = '<<@database_name>>_log', NewPhysicalName = '<<@database_name>>_log.ldf' where [type] = 'L' and FileGroupId = 0
-update @filelistonly set Directory = '<<@sql_ft_directory>>', NewLogicalName = '<<@database_name>>_fulltext', NewPhysicalName = '<<@database_name>>_fulltext.ndf' where [type] = 'F' or FileGroupName like '%OtherTables%' or LogicalName like 'ftrow[_]%'
-update @filelistonly set Directory = '<<@sql_data_directory>>', NewLogicalName = '<<@database_name>>_temp_storage', NewPhysicalName = '<<@database_name>>_temp_storage.ndf' where [type] = 'D' and FileGroupName like '%Temp_Storage%'
+update @filelistonly set Directory = N'<<@sql_data_directory>>', NewLogicalName = N'<<@database_name>>', NewPhysicalName = N'<<@database_name>>.mdf' where [type] = 'D' and FileGroupName = 'PRIMARY' and FileId = 1
+update @filelistonly set Directory = N'<<@sql_data_directory>>', NewLogicalName = N'<<@database_name>>_audit', NewPhysicalName = N'<<@database_name>>_audit.ndf' where [type] = 'D' and FileGroupName = 'AUDIT'
+update @filelistonly set Directory = N'<<@sql_data_directory>>', NewLogicalName = N'<<@database_name>>_indexes', NewPhysicalName = N'<<@database_name>>_indexes.ndf' where [type] = 'D' and FileGroupName = 'INDEXES'
+update @filelistonly set Directory = N'<<@sql_data_directory>>', NewLogicalName = N'<<@database_name>>_data', NewPhysicalName = N'<<@database_name>>_data.ndf' where [type] = 'D' and FileGroupName = 'DATA'
+update @filelistonly set Directory = N'<<@sql_log_directory>>', NewLogicalName = N'<<@database_name>>_log', NewPhysicalName = N'<<@database_name>>_log.ldf' where [type] = 'L' and FileGroupId = 0
+update @filelistonly set Directory = N'<<@sql_ft_directory>>', NewLogicalName = N'<<@database_name>>_fulltext', NewPhysicalName = N'<<@database_name>>_fulltext.ndf' where [type] = 'F' or FileGroupName like '%OtherTables%' or LogicalName like 'ftrow[_]%'
+update @filelistonly set Directory = N'<<@sql_data_directory>>', NewLogicalName = N'<<@database_name>>_temp_storage', NewPhysicalName = N'<<@database_name>>_temp_storage.ndf' where [type] = 'D' and FileGroupName like '%Temp_Storage%'
 
-if @debug >= 2 select '@filelistonly after' as '@filelistonly', * from @filelistonly
+if @debug >= 2 select '@filelistonly after' as [@filelistonly], * from @filelistonly
 
 --====================================================================================================
 
@@ -311,7 +306,7 @@ if @multi_path = 1
 begin
     set @restore_sql = N'RESTORE DATABASE [<<@database_name>>] FROM DISK = N''<<@first_full_path>>'''
 
-    select @restore_sql = @restore_sql + N', DISK = N''' + Item + '''' from master.dbo.split_8k_string_single_delimiter(@file_path, ',') where ItemNumber > 1
+    select @restore_sql = @restore_sql + N', DISK = N''' + Item + N'''' from dbo.udf_split_unicode_string_single_delimiter(@file_path, N',') where ItemNumber > 1
 
     set @restore_sql = @restore_sql + N' WITH FILE = <<@file_number>>'
 end
@@ -332,7 +327,7 @@ select
     ,@restore_sql = replace(@restore_sql, N'<<@sql_log_directory>>', master.dbo.directory_slash(null, @sql_log_directory, N'\'))
     ,@restore_sql = replace(@restore_sql, N'<<@sql_ft_directory>>', master.dbo.directory_slash(null, @sql_ft_directory, N'\'))
 
-if @debug >= 3 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @restore_sql (2): ' + isnull(@restore_sql, N'{null}')
+if @debug >= 3 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_database] @restore_sql (2): ' + isnull(@restore_sql, '{null}')
 
 if @restore_sql is null
 begin

@@ -3,16 +3,10 @@
 use master
 go
 
-if object_id('dbo.install_tsqlt_tests') is not null
-begin
-    drop procedure dbo.install_tsqlt_tests
-end
-go
-
-create procedure dbo.install_tsqlt_tests
+create or alter procedure dbo.install_tsqlt_tests
 (
      @database_name nvarchar(128)   -- [Required] The database where you want to install the tSQLt class
-    ,@folder_path varchar(260)      -- [Required] Path to the folder containing the Tests (i.e., C:\Users\username\Documents\GitHub\repository-name\database\Tests)
+    ,@folder_path nvarchar(260)      -- [Required] Path to the folder containing the Tests (i.e., C:\Users\username\Documents\GitHub\repository-name\database\Tests)
     ,@debug tinyint = 0
 )
 with encryption
@@ -34,7 +28,7 @@ declare
      @return int = 0
     ,@xp_cmdshell nvarchar(4000)
     ,@server_name nvarchar(128) = @@servername
-    ,@file_path varchar(260)
+    ,@file_path nvarchar(260)
     ,@test_class nvarchar(max)
     ,@rowcount int
 
@@ -46,7 +40,7 @@ create table #loadoutput (ident int not null identity(1, 1) primary key clustere
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [install_tsqlt_tests] Running validate_path'
 
-set @folder_path = dbo.directory_slash(null, @folder_path, '\')
+set @folder_path = dbo.directory_slash(null, @folder_path, N'\')
 
 -- Validate path
 exec @return = master.dbo.validate_path
@@ -57,7 +51,7 @@ exec @return = master.dbo.validate_path
 
 if @return <> 0
 begin
-    raiserror('Invalid path [%s].', 16, 1, @folder_path)
+    raiserror(N'Invalid path [%s].', 16, 1, @folder_path)
     return @return
 end
 
@@ -76,7 +70,7 @@ if @return <> 0 return @return -- The previous call will throw an error so don't
 
 if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [install_tsqlt_tests] Running install_tsqlt_class on ' + @database_name
 
-set @file_path = dbo.directory_slash(null, @folder_path, '\') + 'tSQLt.Class.sql'
+set @file_path = dbo.directory_slash(null, @folder_path, N'\') + N'tSQLt.Class.sql'
 
 exec @return = master.dbo.install_tsqlt_class
      @database_name = @database_name
@@ -102,7 +96,7 @@ delete @output where test_class = 'tSQLt.Class.sql'
 
 select @rowcount = count(*) from @output
 
-if @debug >= 5 select '@output' as '@output', * from @output
+if @debug >= 5 select '@output' as [@output], * from @output
 
 if exists (select 1 from @output where test_class = N'The system cannot find the file specified.')
 begin
@@ -128,16 +122,16 @@ begin
     begin
         while exists (select 1 from @output)
         begin
-            select top 1 @test_class = test_class, @xp_cmdshell = null from @output
+            select top (1) @test_class = test_class, @xp_cmdshell = null from @output order by test_class
 
             -- TODO: Change this to use the list_files, read_file, clean_file, parse_file logic so that you can count the number of GOs and make sure that all of the test classes and individual tests got installed.
             select
                  -- If you add the -b switch (sqlcmd -b -E...) it will fail as soon as it runs into an error
-                 @xp_cmdshell = 'sqlcmd -b -E -S "<<@server_name>>" -d "<<@database_name>>" -I -i "<<@folder_path>>\<<@test_class>>"'
-                ,@xp_cmdshell = replace(@xp_cmdshell, '<<@server_name>>', @server_name)
-                ,@xp_cmdshell = replace(@xp_cmdshell, '<<@database_name>>', @database_name)
-                ,@xp_cmdshell = replace(@xp_cmdshell, '<<@folder_path>>', @folder_path)
-                ,@xp_cmdshell = replace(@xp_cmdshell, '<<@test_class>>', @test_class)
+                 @xp_cmdshell = N'sqlcmd -b -E -S "<<@server_name>>" -d "<<@database_name>>" -I -i "<<@folder_path>>\<<@test_class>>"'
+                ,@xp_cmdshell = replace(@xp_cmdshell, N'<<@server_name>>', @server_name)
+                ,@xp_cmdshell = replace(@xp_cmdshell, N'<<@database_name>>', @database_name)
+                ,@xp_cmdshell = replace(@xp_cmdshell, N'<<@folder_path>>', @folder_path)
+                ,@xp_cmdshell = replace(@xp_cmdshell, N'<<@test_class>>', @test_class)
 
             if @debug >= 5 print '[' + convert(varchar(23), getdate(), 121) + '] [install_tsqlt_tests] @xp_cmdshell: ' + isnull(@xp_cmdshell, '{null}')
 
@@ -152,9 +146,11 @@ begin
                     exec xp_cmdshell @xp_cmdshell
 
                 update #loadoutput
-                    set ret_code = @return
-                        ,test_class = @test_class
-                    where ret_code is null
+                set
+                     ret_code = @return
+                    ,test_class = @test_class
+                where
+                    ret_code is null
             end
 
             delete @output where test_class = @test_class

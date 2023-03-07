@@ -1,0 +1,9 @@
+<?xml version = "1.0"?>  
+<BCPFORMAT xmlns="http://schemas.microsoft.com/sqlserver/2004/bulkload/format" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">  
+   <RECORD>  
+      <FIELD xsi:type="CharTerm" ID="WholeLine" TERMINATOR="\n"/> 
+   </RECORD>  
+   <ROW>  
+      <COLUMN SOURCE="WholeLine" NAME="WholeLine" xsi:type="SQLNVARCHAR"/> 
+   </ROW>  
+</BCPFORMAT>
