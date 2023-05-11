@@ -170,8 +170,6 @@ if @sql_version >= 11 -- SQL 2012
 begin
     alter table #headeronly add Containment tinyint not null default (0) -- SQL Server 2012 (11.x)
 end
-    alter table #headeronly add EncryptorThumbprint varbinary(20) null
-    alter table #headeronly add EncryptorType nvarchar(32) null
 
 if @sql_version >= 12 -- SQL 2014
 begin
