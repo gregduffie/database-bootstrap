@@ -2564,7 +2564,16 @@ create table #headeronly
     ,BackupTypeDescription nvarchar(60) null
     ,BackupSetGUID uniqueidentifier null
     ,CompressedBackupSize numeric(20,0) null
-    --,Containment tinyint not null -- SQL 2012+
+
+    --,Containment tinyint not null -- SQL Server 2012 (11.x)
+
+    --,KeyAlgorithm nvarchar(32) null -- SQL Server 2014 (12.x) (CU1)
+    --,EncryptorThumbprint varbinary(20) null -- SQL Server 2014 (12.x) (CU1)
+    --,EncryptorType nvarchar(32) null -- SQL Server 2014 (12.x) (CU1)
+
+    --,LastValidRestoreTime datetime null -- SQL Server 2022 (16.x)
+    --,TimeZone smallint null -- SQL Server 2022 (16.x)
+    --,CompressionAlgorithm nvarchar(32) null -- SQL Server 2022 (16.x)
 )
 
 create table #filelistonly
@@ -2591,7 +2600,7 @@ create table #filelistonly
     ,IsReadOnly int null
     ,IsPresent int null
     ,TDEThumbprint varchar(10) null
---    ,SnapshotUrl nvarchar(360) null -- SQL 2016+
+--    ,SnapshotUrl nvarchar(360) null -- SQL Server 2016 (13.x) (CU1)
 )
 
 declare @filelistonly table
@@ -2615,24 +2624,32 @@ if @debug >= 1 print '[' + convert(varchar(23), getdate(), 121) + '] [restore_da
 12 = 2014
 13 = 2016
 14 = 2017
+15 = 2019
+16 = 2022
 */
 
-if @sql_version >= 14 -- SQL 2017
+if @sql_version >= 11 -- SQL 2012
 begin
-    alter table #headeronly add Containment tinyint not null
-    alter table #headeronly add KeyAlgorithm nvarchar(32) null
-    alter table #headeronly add EncryptorThumbprint varbinary(20) null
-    alter table #headeronly add EncryptorType nvarchar(32) null
+    alter table #headeronly add Containment tinyint not null default (0) -- SQL Server 2012 (11.x)
+end
 
-    alter table #filelistonly add SnapshotUrl nvarchar(360) null
-end
-else if @sql_version >= 13 -- SQL 2016
+if @sql_version >= 12 -- SQL 2014
 begin
-    alter table #filelistonly add SnapshotUrl nvarchar(360) null
+    alter table #headeronly add KeyAlgorithm nvarchar(32) null -- SQL Server 2014 (12.x) (CU1)
+    alter table #headeronly add EncryptorThumbprint varbinary(20) null -- SQL Server 2014 (12.x) (CU1)
+    alter table #headeronly add EncryptorType nvarchar(32) null -- SQL Server 2014 (12.x) (CU1)
 end
-else if @sql_version >= 11 -- SQL 2012
+
+if @sql_version >= 13 -- SQL 2016
 begin
-    alter table #headeronly add Containment tinyint not null
+    alter table #filelistonly add SnapshotUrl nvarchar(360) null -- SQL Server 2016 (13.x) (CU1)
+end
+
+if @sql_version >= 16 -- SQL 2022
+begin
+    alter table #headeronly add LastValidRestoreTime datetime null -- SQL Server 2022 (16.x)
+    alter table #headeronly add TimeZone smallint null -- SQL Server 2022 (16.x)
+    alter table #headeronly add CompressionAlgorithm nvarchar(32) null -- SQL Server 2022 (16.x)
 end
 
 select
