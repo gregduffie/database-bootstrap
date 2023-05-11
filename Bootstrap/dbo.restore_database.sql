@@ -132,8 +132,6 @@ create table #filelistonly
     ,IsPresent int null
     ,TDEThumbprint varchar(10) null
 --    ,SnapshotUrl nvarchar(360) null -- SQL Server 2016 (13.x) (CU1)
-
-
 )
 
 declare @filelistonly table
